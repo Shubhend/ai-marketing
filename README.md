@@ -35,6 +35,21 @@ npm run dev
 
 The API listens on `http://localhost:5000`.
 
+## 🌐 Web Dashboard (All-in-One Interface)
+
+Open your browser and navigate to:
+```
+http://localhost:5000
+```
+This single-page dashboard provides full visual control over:
+- **Accounts & Sessions**: Create, view, launch login browser, confirm, and close sessions for Quora, Twitter (X), and Facebook.
+- **Campaigns & Tasks**: Launch one-click tasks or schedule recurring runs with prompt template chips.
+- **Live Pipeline Monitor**: Inspect step-by-step progress, timings, selected targets, AI draft answers, and failure logs.
+- **Proofs & Published Gallery**: View published live links and click-to-zoom screenshot proofs.
+- **Interactive API Console**: Instant one-click tester for all REST endpoints with formatted JSON preview.
+
+---
+
 ## Sessions
 
 ### 1. Create a session
@@ -49,6 +64,11 @@ curl -X POST http://localhost:5000/api/sessions \
 curl -X POST http://localhost:5000/api/sessions \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"My Twitter Account\",\"sessionId\":\"my-twitter-account\",\"platform\":\"twitter\"}"
+
+# Facebook session
+curl -X POST http://localhost:5000/api/sessions \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"My Facebook Account\",\"sessionId\":\"my-facebook-account\",\"platform\":\"facebook\"}"
 ```
 
 Returns `_id`, `sessionId`, `name`, `platform`, and `status: CREATING`.
@@ -76,6 +96,12 @@ Verifies the login state, automatically closes the browser window, and sets the 
 curl -X POST http://localhost:5000/api/sessions/my-quora-account/close
 ```
 
+### 5. Delete session
+
+```bash
+curl -X DELETE http://localhost:5000/api/sessions/my-quora-account
+```
+
 ## Tasks
 
 ### Available system tasks
@@ -91,6 +117,7 @@ Pass `name`, `sessionId` (or the session `_id`), and the system task:
 - `quora-comment`: Posts a Comment directly on the top post/answer.
 - `quora-end`: Posts an Answer/Reply at the end of the discussion thread.
 - `twitter-marketing` / `twitter-comment`: Searches relevant tweets, ranks them, and posts an engaging reply/comment under 280 characters.
+- `facebook-comment` / `facebook-marketing`: Searches relevant public Facebook posts and posts an engaging, natural comment.
 
 ```bash
 # 1. Post an Answer to the selected Quora question
@@ -111,7 +138,12 @@ curl -X POST http://localhost:5000/api/tasks \
 # 4. Post an authentic Reply/Comment on a related Twitter/X post
 curl -X POST http://localhost:5000/api/tasks \
   -H "Content-Type: application/json" \
-  -d "{\"name\":\"AI Marketing Twitter Campaign\",\"sessionId\":\"my-twitter-account\",\"task\":\"twitter-marketing\",\"prompt\":\"Find recent tweets discussing AI marketing tools. Write an authentic, value-adding reply under 280 characters.\",\"runNow\":true}"
+  -d "{\"name\":\"AI Marketing Twitter Campaign\",\"sessionId\":\"my-twitter-account\",\"task\":\"twitter-comment\",\"prompt\":\"Find recent tweets discussing AI marketing tools. Write an authentic, value-adding reply under 280 characters.\",\"runNow\":true}"
+
+# 5. Post an engaging Comment on a related Facebook post
+curl -X POST http://localhost:5000/api/tasks \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Facebook Fitness Campaign\",\"sessionId\":\"my-facebook-account\",\"task\":\"facebook-comment\",\"prompt\":\"Find discussions about fitness and working out. Post a helpful, engaging comment.\",\"runNow\":true}"
 ```
 
 To schedule a recurring task every 6 hours:
@@ -126,6 +158,14 @@ Trigger an on-demand run of a saved task:
 
 ```bash
 curl -X POST http://localhost:5000/api/tasks/TASK_ID/run
+```
+
+Edit a task / update campaign parameters:
+
+```bash
+curl -X PUT http://localhost:5000/api/tasks/TASK_ID \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Updated Campaign Name\",\"prompt\":\"Updated prompt...\",\"everyHours\":12}"
 ```
 
 Delete a task to stop its recurring schedule:
