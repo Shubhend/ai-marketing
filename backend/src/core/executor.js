@@ -204,7 +204,9 @@ async function resolve(sessionId, taskKey) {
   const isCompatible = session.platform === systemTask.platform ||
     (session.platform?.startsWith('quora') && systemTask.platform?.startsWith('quora')) ||
     (session.platform?.startsWith('twitter') && systemTask.platform?.startsWith('twitter')) ||
-    (session.platform === 'x' && systemTask.platform?.startsWith('twitter'));
+    (session.platform === 'x' && systemTask.platform?.startsWith('twitter')) ||
+    (session.platform?.startsWith('facebook') && systemTask.platform?.startsWith('facebook')) ||
+    (session.platform === 'fb' && systemTask.platform?.startsWith('facebook'));
   if (!isCompatible) {
     const error = new Error(`Task platform "${systemTask.platform}" does not match session platform "${session.platform}"`);
     error.status = 400;

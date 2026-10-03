@@ -29,6 +29,18 @@ const all = [
     platform: 'twitter',
     description: 'Search related Twitter/X posts, select the best discussion, and post an engaging comment on that tweet.',
   },
+  {
+    id: 'facebook-comment',
+    name: 'Facebook Post Comment',
+    platform: 'facebook',
+    description: 'Search related Facebook posts, select the best discussion, and post an engaging comment on that post.',
+  },
+  {
+    id: 'facebook-marketing',
+    name: 'Facebook Marketing Comment',
+    platform: 'facebook',
+    description: 'Search relevant Facebook public discussions, rank by engagement, and post a helpful, value-adding comment.',
+  },
 ];
 
 function get(id) {

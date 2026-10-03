@@ -141,6 +141,14 @@ router.post('/sessions/:id/close', wrap(async (req, res) => {
   res.json({ sessionId: req.params.id, message: 'Browser stopped and closed.' });
 }));
 
+router.delete('/sessions/:id', wrap(async (req, res) => {
+  const doc = await findSession(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Session not found' });
+  await browser.close().catch(() => {});
+  await Session.deleteOne({ _id: doc._id });
+  res.json({ sessionId: doc.sessionId, deleted: true });
+}));
+
 // Backward compatibility session routes
 router.get('/session', wrap(async (req, res) => {
   const snap = await browser.snapshot('quora');
@@ -175,7 +183,33 @@ router.post('/session/confirm', wrap(async (req, res) => {
 // Tasks API
 router.get('/tasks', wrap(async (req, res) => {
   const rows = await Task.find().sort({ createdAt: -1 }).limit(50);
-  res.json(rows.map(present));
+  const taskIds = rows.map((r) => r.id);
+  const latestExecs = await Execution.aggregate([
+    { $match: { taskId: { $in: taskIds } } },
+    { $sort: { createdAt: -1 } },
+    {
+      $group: {
+        _id: '$taskId',
+        status: { $first: '$status' },
+        executionId: { $first: '$executionId' },
+        createdAt: { $first: '$createdAt' },
+        failure: { $first: '$failure' },
+        proof: { $first: '$proof' },
+        answer: { $first: '$answer' },
+      },
+    },
+  ]);
+  const execMap = new Map(latestExecs.map((e) => [e._id, e]));
+  const result = rows.map((r) => {
+    const obj = present(r);
+    const exec = execMap.get(r.id);
+    obj.lastStatus = exec?.status || (r.lastRunAt ? 'UNKNOWN' : 'NEVER_RUN');
+    obj.lastExecutionId = exec?.executionId || null;
+    obj.lastFailure = exec?.failure || null;
+    obj.lastProof = exec?.proof || null;
+    return obj;
+  });
+  res.json(result);
 }));
 
 router.post('/tasks', wrap(async (req, res) => {
@@ -237,6 +271,36 @@ router.post('/tasks/:id/run', wrap(async (req, res) => {
   res.status(202).json({ executionId: execution.executionId });
 }));
 
+router.put('/tasks/:id', wrap(async (req, res) => {
+  const row = await Task.findOne({ id: req.params.id });
+  if (!row) return res.status(404).json({ error: 'Task not found' });
+
+  const { name, sessionId, task, prompt, everyHours, enabled } = req.body || {};
+  if (name !== undefined) row.name = name;
+  if (prompt !== undefined) row.prompt = prompt;
+
+  if (sessionId !== undefined || task !== undefined) {
+    const targetSessionId = sessionId !== undefined ? sessionId : row.sessionId;
+    const targetTask = task !== undefined ? task : row.task;
+    const { session, systemTask } = await executor.resolve(targetSessionId, targetTask);
+    row.sessionId = session.sessionId;
+    row.task = systemTask.id;
+  }
+
+  if (everyHours !== undefined) {
+    const hours = hoursOf(everyHours);
+    row.everyHours = hours;
+    row.enabled = hours ? (enabled !== undefined ? Boolean(enabled) : true) : false;
+    row.nextRunAt = hours && row.enabled ? new Date(Date.now() + hours * 60 * 60 * 1000) : null;
+  } else if (enabled !== undefined) {
+    row.enabled = Boolean(enabled) && Boolean(row.everyHours);
+  }
+
+  await row.save();
+  scheduler.watch(row);
+  res.json(present(row));
+}));
+
 router.delete('/tasks/:id', wrap(async (req, res) => {
   const row = await Task.findOneAndDelete({ id: req.params.id });
   if (!row) return res.status(404).json({ error: 'Task not found' });
@@ -246,7 +310,10 @@ router.delete('/tasks/:id', wrap(async (req, res) => {
 
 // Executions API
 router.get('/executions', wrap(async (req, res) => {
-  const query = req.query.status ? { status: String(req.query.status).toUpperCase() } : {};
+  const query = {};
+  if (req.query.status) query.status = String(req.query.status).toUpperCase();
+  if (req.query.taskId) query.taskId = String(req.query.taskId);
+  if (req.query.sessionId) query.sessionId = String(req.query.sessionId);
   const rows = await Execution.find(query).sort({ createdAt: -1 }).limit(50);
   res.json(rows.map(present));
 }));

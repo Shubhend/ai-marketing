@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Social Marketing Studio</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111726;
+      --card-border: #1e293b;
+      --card-hover: #182238;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent: #8b5cf6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: rgba(17, 23, 38, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+
+    .brand h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: #1e293b;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      margin-left: 0.5rem;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      padding: 0.25rem 0.75rem;
+      background: #0f291e;
+      color: #34d399;
+      border: 1px solid #065f46;
+      border-radius: 9999px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34d399;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Nav Tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: #0b1120;
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.5rem 1.5rem 0;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .tab-count {
+      background: #1e293b;
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 9999px;
+      color: var(--text-muted);
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1440px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .grid-1-2 {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid-1-2, .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .card-header h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.825rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      background: #0b1120;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 0.6rem 0.8rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.55rem 1rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid #334155;
+    }
+    .btn-secondary:hover {
+      background: #273549;
+    }
+
+    .btn-success {
+      background: #059669;
+      color: #fff;
+    }
+    .btn-success:hover {
+      background: #047857;
+    }
+
+    .btn-danger {
+      background: #dc2626;
+      color: #fff;
+    }
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+
+    .btn-sm {
+      padding: 0.3rem 0.6rem;
+      font-size: 0.775rem;
+      border-radius: 6px;
+    }
+
+    .btn-block {
+      width: 100%;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.725rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .badge-ready { background: #064e3b; color: #34d399; }
+    .badge-running { background: #1e3a8a; color: #60a5fa; }
+    .badge-completed { background: #065f46; color: #34d399; }
+    .badge-failed { background: #7f1d1d; color: #f87171; }
+    .badge-creating { background: #451a03; color: #fbbf24; }
+    .badge-error { background: #7f1d1d; color: #f87171; }
+
+    .badge-quora { background: #4a151b; color: #fca5a5; }
+    .badge-twitter { background: #082f49; color: #7dd3fc; }
+    .badge-facebook { background: #172554; color: #93c5fd; }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    th {
+      background: #0b1120;
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: var(--card-hover);
+    }
+
+    /* Template prompt chips */
+    .template-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+    }
+
+    .chip {
+      font-size: 0.75rem;
+      background: #1e293b;
+      color: var(--text-muted);
+      border: 1px solid #334155;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      background: #273549;
+      color: var(--text);
+      border-color: var(--primary);
+    }
+
+    /* Modal / Drawer */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+    }
+
+    .modal-close:hover {
+      color: var(--text);
+      background: #1e293b;
+    }
+
+    /* Step Timeline */
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      background: #0b1120;
+      padding: 0.6rem 0.8rem;
+      border-radius: 8px;
+      border-left: 3px solid var(--card-border);
+      font-size: 0.825rem;
+    }
+
+    .timeline-item.ok {
+      border-left-color: var(--success);
+    }
+
+    .timeline-item.failed {
+      border-left-color: var(--danger);
+    }
+
+    .timeline-stage {
+      font-weight: 700;
+      min-width: 75px;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .timeline-desc {
+      flex: 1;
+      word-break: break-word;
+    }
+
+    .timeline-time {
+      font-size: 0.725rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* Json Viewers */
+    pre.code-view {
+      background: #060911;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.775rem;
+      color: #93c5fd;
+      overflow-x: auto;
+      max-height: 280px;
+    }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #fff;
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    #toast.success { border-color: #059669; background: #064e3b; }
+    #toast.error { border-color: #dc2626; background: #7f1d1d; }
+
+    /* Screenshot Gallery */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .proof-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .proof-img {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      background: #0b1120;
+      border-bottom: 1px solid var(--card-border);
+      cursor: pointer;
+    }
+
+    .proof-content {
+      padding: 0.9rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Task Log Run Cards */
+    .log-run-card {
+      background: #0b1120;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1.1rem;
+      margin-bottom: 1.25rem;
+    }
+    .log-run-card.ok {
+      border-left: 4px solid var(--success);
+    }
+    .log-run-card.failed {
+      border-left: 4px solid var(--danger);
+    }
+    .log-run-card.running {
+      border-left: 4px solid var(--primary);
+    }
+    .proof-thumb {
+      max-height: 140px;
+      max-width: 240px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .proof-thumb:hover {
+      transform: scale(1.03);
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Sticky Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">AI</div>
+      <div>
+        <h1>Social Marketing Studio</h1>
+      </div>
+      <span>v1.0</span>
+    </div>
+    <div class="header-actions">
+      <div class="status-badge" id="backendStatus">
+        <div class="status-dot"></div>
+        <span>Connected (Port 5000)</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="refreshAll()" title="Refresh All Data">
+        🔄 Refresh
+      </button>
+      <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.8rem; cursor:pointer; color:var(--text-muted); margin:0;">
+        <input type="checkbox" id="autoPollCheck" checked style="width:auto; margin:0;">
+        <span>Live Poll (4s)</span>
+      </label>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('sessions')">
+      👤 Accounts & Sessions <span class="tab-count" id="sessionCount">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('tasks')">
+      ⚡ Campaigns & Tasks <span class="tab-count" id="taskCount">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('executions')">
+      📊 Live Executions <span class="tab-count" id="execCount">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('publications')">
+      📸 Proofs & Published <span class="tab-count" id="pubCount">0</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('console')">
+      🔌 API Console
+    </button>
+  </nav>
+
+  <!-- Main View Area -->
+  <main>
+
+    <!-- SECTION 1: SESSIONS -->
+    <div id="tab-sessions" class="tab-content active">
+      <div class="grid-1-2">
+        <!-- Create Session Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2>➕ Add Account Session</h2>
+          </div>
+          <form id="createSessionForm" onsubmit="handleCreateSession(event)">
+            <div class="form-group">
+              <label>Account Name</label>
+              <input type="text" id="sessName" placeholder="e.g. My Quora Profile" required>
+            </div>
+            <div class="form-group">
+              <label>Session ID (slug identifier)</label>
+              <input type="text" id="sessId" placeholder="e.g. my-quora-account" required>
+            </div>
+            <div class="form-group">
+              <label>Platform</label>
+              <select id="sessPlatform" required>
+                <option value="quora">Quora</option>
+                <option value="twitter">Twitter (X)</option>
+                <option value="facebook">Facebook</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Create Session</button>
+          </form>
+          <div style="margin-top: 1rem; font-size: 0.775rem; color: var(--text-muted); line-height: 1.4;">
+            💡 <strong>How it works:</strong> Creating a session registers a dedicated Playwright browser profile. Click <strong>Login</strong> to open the visible browser, log in manually once, and click <strong>Confirm</strong> to make it <code>READY</code>.
+          </div>
+        </div>
+
+        <!-- Sessions List Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Registered Browser Sessions</h2>
+            <button class="btn btn-secondary btn-sm" onclick="loadSessions()">Refresh</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Session ID</th>
+                  <th>Platform</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sessionsTableBody">
+                <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading sessions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: TASKS & CAMPAIGNS -->
+    <div id="tab-tasks" class="tab-content">
+      <div class="grid-1-2">
+        <!-- Create Task Form -->
+        <div class="card">
+          <div class="card-header">
+            <h2>🚀 Create Marketing Task</h2>
+          </div>
+          <form id="createTaskForm" onsubmit="handleCreateTask(event)">
+            <div class="form-group">
+              <label>Campaign / Task Name</label>
+              <input type="text" id="taskName" placeholder="e.g. Startup SaaS Growth Campaign" required>
+            </div>
+
+            <div class="form-group">
+              <label>Account Session</label>
+              <select id="taskSession" required>
+                <option value="">Select an account session...</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Action Type</label>
+              <select id="taskType" required>
+                <option value="quora-marketing">Quora: Post Useful Answer</option>
+                <option value="quora-comment">Quora: Comment on Top Post</option>
+                <option value="quora-end">Quora: Reply at End of Thread</option>
+                <option value="twitter-comment">Twitter (X): Comment on Best Tweet</option>
+                <option value="twitter-marketing">Twitter (X): Growth Reply (&lt;280 chars)</option>
+                <option value="facebook-comment">Facebook: Post Comment</option>
+                <option value="facebook-marketing">Facebook: Marketing Comment</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Campaign Prompt & Objective</label>
+              <textarea id="taskPrompt" rows="3" placeholder="Describe the topic to search, answer criteria, and optional link..." required></textarea>
+              <div class="template-chips">
+                <span class="chip" onclick="applyTemplate('quora-ans')">Quora Answer Template</span>
+                <span class="chip" onclick="applyTemplate('quora-cmt')">Quora Comment Template</span>
+                <span class="chip" onclick="applyTemplate('tweet-reply')">Twitter Reply Template</span>
+                <span class="chip" onclick="applyTemplate('fb-cmt')">Facebook Comment Template</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Run Mode</label>
+              <div style="display:flex; gap:1rem; margin-top:0.3rem;">
+                <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                  <input type="radio" name="runMode" value="now" checked onchange="toggleScheduleInput(false)" style="width:auto;">
+                  <span>Run Immediately</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                  <input type="radio" name="runMode" value="schedule" onchange="toggleScheduleInput(true)" style="width:auto;">
+                  <span>Recurring Schedule</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group" id="everyHoursGroup" style="display:none;">
+              <label>Run Every (Hours)</label>
+              <input type="number" id="taskEveryHours" min="1" max="168" value="6">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">🚀 Launch Campaign Task</button>
+          </form>
+        </div>
+
+        <!-- Saved Tasks List -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Active Campaigns & Tasks</h2>
+            <button class="btn btn-secondary btn-sm" onclick="loadTasks()">Refresh</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Task Name</th>
+                  <th>Type</th>
+                  <th>Session</th>
+                  <th>Schedule</th>
+                  <th>Last Status</th>
+                  <th>Last Run</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tasksTableBody">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading tasks...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: EXECUTIONS & PIPELINE MONITOR -->
+    <div id="tab-executions" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Execution History & Diagnostics</h2>
+          <div style="display:flex; gap:0.5rem;">
+            <select id="execFilter" onchange="loadExecutions()" style="width:auto; padding:0.3rem 0.6rem; font-size:0.8rem;">
+              <option value="">All Statuses</option>
+              <option value="RUNNING">RUNNING only</option>
+              <option value="COMPLETED">COMPLETED only</option>
+              <option value="FAILED">FAILED only</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadExecutions()">Refresh</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Task / Campaign</th>
+                <th>Platform</th>
+                <th>Started</th>
+                <th>AI Calls</th>
+                <th>Selected Target</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="executionsTableBody">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading executions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: PUBLICATIONS & PROOFS -->
+    <div id="tab-publications" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>Published Social Content Proofs</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadPublications()">Refresh</button>
+        </div>
+        <div id="publicationsContainer" class="gallery-grid">
+          <p style="color:var(--text-muted);">Loading publications...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 5: API CONSOLE -->
+    <div id="tab-console" class="tab-content">
+      <div class="grid-1-2">
+        <div class="card">
+          <div class="card-header">
+            <h2>REST API Endpoints</h2>
+          </div>
+          <p style="font-size:0.825rem; color:var(--text-muted); margin-bottom:1rem;">
+            Click any button below to immediately execute the endpoint against <code>http://localhost:5000</code>:
+          </p>
+          <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <button class="btn btn-secondary" onclick="testApi('/api/platforms')">GET /api/platforms</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/tasks/available')">GET /api/tasks/available</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/sessions')">GET /api/sessions</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/tasks')">GET /api/tasks</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/executions')">GET /api/executions</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/executions?status=FAILED')">GET /api/executions?status=FAILED</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/publications')">GET /api/publications</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2>Response Preview</h2>
+            <button class="btn btn-secondary btn-sm" onclick="copyApiResponse()">📋 Copy JSON</button>
+          </div>
+          <div id="apiEndpointUrl" style="font-size:0.8rem; color:var(--primary); margin-bottom:0.5rem; font-family:monospace;">No request sent yet</div>
+          <pre class="code-view" id="apiResponseView" style="max-height: 460px;">// Response will appear here...</pre>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Execution Details Modal -->
+  <div class="modal-overlay" id="execModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modalExecTitle">Execution Details</h2>
+        <button class="modal-close" onclick="closeModal('execModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="modalExecBody">
+        <p>Loading...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Zoom Modal -->
+  <div class="modal-overlay" id="imageModal" onclick="closeModal('imageModal')">
+    <div style="max-width: 90vw; max-height: 90vh;">
+      <img id="zoomImage" src="" alt="Proof Screenshot" style="width:100%; height:auto; max-height:85vh; border-radius:8px; border:2px solid #334155;">
+    </div>
+  </div>
+
+  <!-- Edit Task Modal -->
+  <div class="modal-overlay" id="editTaskModal">
+    <div class="modal-card" style="max-width: 650px;">
+      <div class="modal-header">
+        <h2>✏️ Edit Campaign / Task</h2>
+        <button class="modal-close" onclick="closeModal('editTaskModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="editTaskForm" onsubmit="handleSaveEditedTask(event)">
+          <input type="hidden" id="editTaskId">
+          <div class="form-group">
+            <label>Campaign / Task Name</label>
+            <input type="text" id="editTaskName" required>
+          </div>
+          <div class="form-group">
+            <label>Account Session</label>
+            <select id="editTaskSession" required></select>
+          </div>
+          <div class="form-group">
+            <label>Action Type</label>
+            <select id="editTaskType" required>
+              <option value="quora-marketing">Quora: Post Useful Answer</option>
+              <option value="quora-comment">Quora: Comment on Top Post</option>
+              <option value="quora-end">Quora: Reply at End of Thread</option>
+              <option value="twitter-comment">Twitter (X): Comment on Best Tweet</option>
+              <option value="twitter-marketing">Twitter (X): Growth Reply (&lt;280 chars)</option>
+              <option value="facebook-comment">Facebook: Post Comment</option>
+              <option value="facebook-marketing">Facebook: Marketing Comment</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Campaign Prompt & Objective</label>
+            <textarea id="editTaskPrompt" rows="4" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Run Every (Hours - enter 0 or leave empty for manual runs only)</label>
+            <input type="number" id="editTaskEveryHours" min="0" max="168" value="0">
+          </div>
+          <div class="form-group" style="display:flex; align-items:center; gap:0.5rem;">
+            <input type="checkbox" id="editTaskEnabled" style="width:auto; margin:0;">
+            <label for="editTaskEnabled" style="margin:0; cursor:pointer;">Enable automatic recurring runs</label>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:1.5rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('editTaskModal')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Logs & Proofs Modal -->
+  <div class="modal-overlay" id="taskLogsModal">
+    <div class="modal-card" style="max-width: 900px;">
+      <div class="modal-header">
+        <h2 id="taskLogsModalTitle">📋 Task Execution Logs & Proofs</h2>
+        <button class="modal-close" onclick="closeModal('taskLogsModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="taskLogsModalBody">
+        <p style="color:var(--text-muted);">Loading task logs...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Box -->
+  <div id="toast">Message</div>
+
+  <script>
+    let activeTab = 'sessions';
+    let pollTimer = null;
+
+    // Tab Switching
+    function switchTab(tabId) {
+      activeTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const targetContent = document.getElementById(`tab-${tabId}`);
+      if (targetContent) targetContent.classList.add('active');
+
+      if (tabId === 'sessions') loadSessions();
+      if (tabId === 'tasks') { loadTasks(); loadSessionOptions(); }
+      if (tabId === 'executions') loadExecutions();
+      if (tabId === 'publications') loadPublications();
+    }
+
+    // Toast
+    function showToast(msg, type = 'success') {
+      const t = document.getElementById('toast');
+      t.className = `show ${type}`;
+      t.innerText = msg;
+      setTimeout(() => { t.className = ''; }, 3500);
+    }
+
+    function toggleScheduleInput(show) {
+      document.getElementById('everyHoursGroup').style.display = show ? 'block' : 'none';
+    }
+
+    function applyTemplate(type) {
+      const p = document.getElementById('taskPrompt');
+      if (type === 'quora-ans') {
+        p.value = "Find recent Quora questions about startup payment gateways. Write a comprehensive, useful answer. Mention https://example.com only when it genuinely fits.";
+        document.getElementById('taskType').value = 'quora-marketing';
+      } else if (type === 'quora-cmt') {
+        p.value = "Find fitness workout routine discussions. Write an insightful, helpful comment on the top post.";
+        document.getElementById('taskType').value = 'quora-comment';
+      } else if (type === 'tweet-reply') {
+        p.value = "Find recent tweets discussing AI marketing tools. Write an authentic, value-adding reply under 280 characters.";
+        document.getElementById('taskType').value = 'twitter-comment';
+      } else if (type === 'fb-cmt') {
+        p.value = "Find discussions about home workout routines. Post a helpful, friendly comment.";
+        document.getElementById('taskType').value = 'facebook-comment';
+      }
+    }
+
+    // Modal helpers
+    function openModal(id) {
+      document.getElementById(id).classList.add('active');
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    function zoomImage(src) {
+      document.getElementById('zoomImage').src = src;
+      openModal('imageModal');
+    }
+
+    // Auto-generate slug from name
+    document.getElementById('sessName')?.addEventListener('input', (e) => {
+      const idInput = document.getElementById('sessId');
+      if (!idInput.dataset.touched) {
+        idInput.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      }
+    });
+    document.getElementById('sessId')?.addEventListener('input', () => {
+      document.getElementById('sessId').dataset.touched = "true";
+    });
+
+    // 1. SESSIONS
+    async function loadSessions() {
+      try {
+        const res = await fetch('/api/sessions');
+        const data = await res.json();
+        document.getElementById('sessionCount').innerText = data.length || 0;
+        const tbody = document.getElementById('sessionsTableBody');
+
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No sessions yet. Create one to get started!</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(s => {
+          const platBadge = `<span class="badge badge-${s.platform || 'quora'}">${s.platform || 'quora'}</span>`;
+          const statusBadge = `<span class="badge badge-${(s.status || 'creating').toLowerCase()}">${s.status || 'CREATING'}</span>`;
+          return `
+            <tr>
+              <td><strong>${escapeHtml(s.name || s.sessionId)}</strong></td>
+              <td><code>${escapeHtml(s.sessionId)}</code></td>
+              <td>${platBadge}</td>
+              <td>${statusBadge}</td>
+              <td>
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                  <button class="btn btn-primary btn-sm" onclick="sessionLogin('${s.sessionId}')" title="Opens browser window to log in">Login</button>
+                  <button class="btn btn-success btn-sm" onclick="sessionConfirm('${s.sessionId}')" title="Verify login & save profile">Confirm</button>
+                  <button class="btn btn-secondary btn-sm" onclick="sessionClose('${s.sessionId}')" title="Close any running browser">Close</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.sessionId}')" title="Delete session">Delete</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load sessions', err);
+      }
+    }
+
+    async function deleteSession(id) {
+      if (!confirm(`Are you sure you want to delete session "${id}"? This will remove the session from the database.`)) return;
+      try {
+        const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to delete session');
+        showToast(`Session "${id}" deleted.`);
+        loadSessions();
+        loadSessionOptions();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function handleCreateSession(e) {
+      e.preventDefault();
+      const name = document.getElementById('sessName').value.trim();
+      const sessionId = document.getElementById('sessId').value.trim();
+      const platform = document.getElementById('sessPlatform').value;
+
+      try {
+        const res = await fetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, sessionId, platform })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create session');
+        showToast(`Session "${data.sessionId}" created!`);
+        document.getElementById('sessName').value = '';
+        document.getElementById('sessId').value = '';
+        delete document.getElementById('sessId').dataset.touched;
+        loadSessions();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function sessionLogin(id) {
+      showToast(`Opening browser for ${id}...`);
+      try {
+        const res = await fetch(`/api/sessions/${id}/login`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to start login');
+        showToast(data.message || 'Browser opened. Log in manually, then click Confirm.');
+        loadSessions();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function sessionConfirm(id) {
+      showToast(`Verifying login for ${id}...`);
+      try {
+        const res = await fetch(`/api/sessions/${id}/confirm`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Login verification failed');
+        showToast(`Status: ${data.status}! Profile saved.`, data.status === 'READY' ? 'success' : 'error');
+        loadSessions();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function sessionClose(id) {
+      try {
+        await fetch(`/api/sessions/${id}/close`, { method: 'POST' });
+        showToast(`Browser closed.`);
+        loadSessions();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // Populate session dropdown in task form
+    async function loadSessionOptions() {
+      try {
+        const res = await fetch('/api/sessions');
+        const data = await res.json();
+        const sel = document.getElementById('taskSession');
+        sel.innerHTML = '<option value="">Select an account session...</option>' +
+          data.map(s => `<option value="${s.sessionId}">${s.name} (${s.platform}) - [${s.status}]</option>`).join('');
+      } catch {}
+    }
+
+    // 2. TASKS
+    async function loadTasks() {
+      try {
+        const res = await fetch('/api/tasks');
+        const data = await res.json();
+        document.getElementById('taskCount').innerText = data.length || 0;
+        const tbody = document.getElementById('tasksTableBody');
+
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No tasks configured.</td></tr>';
+          return;
+        }
+
+        window.cachedTasks = new Map(data.map(t => [t.id, t]));
+
+        tbody.innerHTML = data.map(t => {
+          const scheduleText = t.everyHours ? `Every ${t.everyHours}h` : 'Manual';
+          const lastRunText = t.lastRunAt ? new Date(t.lastRunAt).toLocaleTimeString() : 'Never';
+
+          let statusBadge = '<span class="badge" style="background:#1e293b; color:#94a3b8;">NEVER RUN</span>';
+          if (t.lastStatus === 'COMPLETED') {
+            statusBadge = `<span class="badge badge-completed" title="Last execution succeeded">SUCCESS</span>`;
+          } else if (t.lastStatus === 'FAILED') {
+            const reason = t.lastFailure?.reason ? escapeHtml(t.lastFailure.reason) : 'Last run failed';
+            statusBadge = `<span class="badge badge-failed" title="${reason}">FAILED</span>`;
+          } else if (t.lastStatus === 'RUNNING') {
+            statusBadge = `<span class="badge badge-running">RUNNING</span>`;
+          }
+
+          return `
+            <tr>
+              <td><strong>${escapeHtml(t.name || 'Untitled Task')}</strong></td>
+              <td><code>${escapeHtml(t.task)}</code></td>
+              <td><code>${escapeHtml(t.sessionId)}</code></td>
+              <td>${scheduleText}</td>
+              <td>${statusBadge}</td>
+              <td style="color:var(--text-muted); font-size:0.775rem;">${lastRunText}</td>
+              <td>
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                  <button class="btn btn-primary btn-sm" onclick="runTaskNow('${t.id}')" title="Run immediately">Run Now</button>
+                  <button class="btn btn-secondary btn-sm" onclick="openTaskLogsModal('${t.id}')" title="View execution logs & proof of success">📋 Logs</button>
+                  <button class="btn btn-secondary btn-sm" onclick="openEditTaskModal('${t.id}')" title="Edit campaign task">✏️ Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')" title="Delete task">Delete</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load tasks', err);
+      }
+    }
+
+    async function handleCreateTask(e) {
+      e.preventDefault();
+      const name = document.getElementById('taskName').value.trim();
+      const sessionId = document.getElementById('taskSession').value;
+      const task = document.getElementById('taskType').value;
+      const prompt = document.getElementById('taskPrompt').value.trim();
+      const runMode = document.querySelector('input[name="runMode"]:checked').value;
+      const runNow = runMode === 'now';
+      const everyHours = runMode === 'schedule' ? Number(document.getElementById('taskEveryHours').value) : null;
+
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, sessionId, task, prompt, runNow, everyHours })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create task');
+
+        showToast(runNow ? `Task launched! Execution ID: ${data.executionId?.slice(0, 8)}...` : 'Scheduled task created!');
+        loadTasks();
+        if (runNow) {
+          switchTab('executions');
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function runTaskNow(id) {
+      showToast(`Triggering run for task ${id}...`);
+      try {
+        const res = await fetch(`/api/tasks/${id}/run`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to trigger run');
+        showToast(`Run started! Execution: ${data.executionId?.slice(0, 8)}...`);
+        switchTab('executions');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function deleteTask(id) {
+      if (!confirm('Are you sure you want to delete this task?')) return;
+      try {
+        await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        showToast('Task deleted.');
+        loadTasks();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function openEditTaskModal(id) {
+      const t = window.cachedTasks?.get(id);
+      if (!t) return;
+      document.getElementById('editTaskId').value = t.id;
+      document.getElementById('editTaskName').value = t.name || '';
+      document.getElementById('editTaskPrompt').value = t.prompt || '';
+      document.getElementById('editTaskEveryHours').value = t.everyHours || 0;
+      document.getElementById('editTaskEnabled').checked = Boolean(t.enabled);
+
+      // Populate session dropdown in edit modal
+      const sel = document.getElementById('editTaskSession');
+      const sessionsRes = await fetch('/api/sessions').then(r => r.json()).catch(() => []);
+      sel.innerHTML = sessionsRes.map(s => 
+        `<option value="${s.sessionId}" ${s.sessionId === t.sessionId ? 'selected' : ''}>${s.name} (${s.platform}) - [${s.status}]</option>`
+      ).join('');
+
+      document.getElementById('editTaskType').value = t.task || 'quora-marketing';
+      openModal('editTaskModal');
+    }
+
+    async function handleSaveEditedTask(e) {
+      e.preventDefault();
+      const id = document.getElementById('editTaskId').value;
+      const name = document.getElementById('editTaskName').value.trim();
+      const sessionId = document.getElementById('editTaskSession').value;
+      const task = document.getElementById('editTaskType').value;
+      const prompt = document.getElementById('editTaskPrompt').value.trim();
+      const everyHoursNum = Number(document.getElementById('editTaskEveryHours').value);
+      const enabled = document.getElementById('editTaskEnabled').checked;
+
+      try {
+        const res = await fetch(`/api/tasks/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            sessionId,
+            task,
+            prompt,
+            everyHours: everyHoursNum > 0 ? everyHoursNum : null,
+            enabled: everyHoursNum > 0 ? enabled : false
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update task');
+        showToast(`Task "${data.name}" updated successfully!`);
+        closeModal('editTaskModal');
+        loadTasks();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function openTaskLogsModal(taskId) {
+      openModal('taskLogsModal');
+      document.getElementById('taskLogsModalTitle').innerText = '📋 Task Logs & Proofs';
+      const bodyEl = document.getElementById('taskLogsModalBody');
+      bodyEl.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem;">Loading task logs and publication proofs...</p>';
+
+      try {
+        const [tRes, exRes] = await Promise.all([
+          fetch(`/api/tasks/${taskId}`).then(r => r.json()),
+          fetch(`/api/executions?taskId=${taskId}`).then(r => r.json())
+        ]);
+
+        const taskName = escapeHtml(tRes.name || 'Task');
+        document.getElementById('taskLogsModalTitle').innerText = `📋 Logs: ${taskName}`;
+
+        const runs = exRes || [];
+        const totalRuns = runs.length;
+        const successRuns = runs.filter(r => r.status === 'COMPLETED').length;
+        const failedRuns = runs.filter(r => r.status === 'FAILED').length;
+
+        let summaryHtml = `
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; background:#0b1120; border:1px solid #1e293b; padding:0.9rem; border-radius:10px; margin-bottom:1.25rem;">
+            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">CAMPAIGN</span><strong>${taskName}</strong></div>
+            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">ACTION TYPE</span><code>${escapeHtml(tRes.task)}</code></div>
+            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">SESSION</span><code>${escapeHtml(tRes.sessionId)}</code></div>
+            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">TOTAL RUNS</span><strong>${totalRuns} (${successRuns} Success, ${failedRuns} Failed)</strong></div>
+          </div>
+        `;
+
+        if (runs.length === 0) {
+          bodyEl.innerHTML = summaryHtml + '<div style="text-align:center; padding:2rem; color:var(--text-muted); background:#0b1120; border-radius:8px;">No executions have been run for this task yet. Click <strong>Run Now</strong> to start!</div>';
+          return;
+        }
+
+        let listHtml = runs.map((ex, idx) => {
+          const isOk = ex.status === 'COMPLETED';
+          const isFailed = ex.status === 'FAILED';
+          const cardClass = isOk ? 'ok' : (isFailed ? 'failed' : 'running');
+          const statusBadge = `<span class="badge badge-${(ex.status || '').toLowerCase()}">${isOk ? 'SUCCESS' : ex.status}</span>`;
+          const time = ex.createdAt ? new Date(ex.createdAt).toLocaleString() : '';
+
+          // Target post link
+          const targetHtml = ex.selected?.title ? `
+            <div style="margin: 0.6rem 0; font-size: 0.85rem;">
+              <span style="color:var(--text-muted);">Target: </span>
+              <a href="${ex.selected.url}" target="_blank" style="color:#60a5fa; text-decoration:none; font-weight:500;">
+                🔗 ${escapeHtml(ex.selected.title)}
+              </a>
+            </div>
+          ` : '';
+
+          // Proof section
+          let proofHtml = '';
+          if (ex.proof?.proofUrl || ex.proof?.screenshotPath) {
+            const shot = ex.proof.screenshotPath ? `/${ex.proof.screenshotPath}` : '';
+            proofHtml = `
+              <div style="background:#064e3b; border:1px solid #059669; border-radius:8px; padding:0.85rem; margin-top:0.75rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.4rem;">
+                  <strong style="color:#34d399; font-size:0.85rem;">✅ Proof of Success</strong>
+                  ${ex.proof.proofUrl ? `<a href="${ex.proof.proofUrl}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔗 Open Published Post</a>` : ''}
+                </div>
+                ${shot ? `
+                  <div style="margin-top:0.5rem; display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                    <img src="${shot}" class="proof-thumb" onclick="zoomImage('${shot}')" title="Click to view full screenshot proof">
+                    <div style="font-size:0.75rem; color:#a7f3d0;">Click thumbnail to inspect full high-resolution screenshot taken upon verification.</div>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }
+
+          // Failure section
+          let failureHtml = '';
+          if (isFailed && ex.failure?.reason) {
+            failureHtml = `
+              <div style="background:#450a0a; border:1px solid #991b1b; border-radius:8px; padding:0.75rem; margin-top:0.75rem; color:#fca5a5; font-size:0.825rem;">
+                <strong>❌ Failure at stage [${escapeHtml(ex.failure.stage || 'unknown')}]:</strong>
+                <div style="margin-top:0.25rem;">${escapeHtml(ex.failure.reason)}</div>
+                ${ex.failure.pageUrl ? `<div style="margin-top:0.25rem; font-size:0.75rem; color:#f87171; overflow:hidden; text-overflow:ellipsis;">URL: ${escapeHtml(ex.failure.pageUrl)}</div>` : ''}
+              </div>
+            `;
+          }
+
+          // AI generated content / comment
+          let answerHtml = '';
+          if (ex.answer) {
+            answerHtml = `
+              <div style="margin-top:0.75rem;">
+                <span style="font-size:0.775rem; color:var(--text-muted); font-weight:600;">AI PUBLISHED CONTENT:</span>
+                <div style="background:#060911; border:1px solid #1e293b; padding:0.6rem 0.8rem; border-radius:6px; font-size:0.825rem; color:#e2e8f0; margin-top:0.25rem; white-space:pre-wrap;">${escapeHtml(ex.answer)}</div>
+              </div>
+            `;
+          }
+
+          // Steps timeline snippet
+          let stepsSummary = (ex.steps || []).map(s => {
+            const okDot = s.status === 'OK' ? '🟢' : (s.status === 'FAILED' ? '🔴' : '⚪');
+            return `<span style="font-size:0.725rem; background:#1e293b; padding:0.15rem 0.45rem; border-radius:4px; margin-right:0.3rem;">${okDot} ${s.stage} (${s.durationMs ? s.durationMs + 'ms' : ''})</span>`;
+          }).join(' ');
+
+          return `
+            <div class="log-run-card ${cardClass}">
+              <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:0.5rem; margin-bottom:0.6rem; flex-wrap:wrap; gap:0.4rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  ${statusBadge}
+                  <span style="font-size:0.8rem; color:var(--text-muted);">Run #${runs.length - idx} &bull; ${time}</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="viewExecution('${ex.executionId}')">Inspect Full JSON</button>
+              </div>
+
+              ${targetHtml}
+              ${proofHtml}
+              ${failureHtml}
+              ${answerHtml}
+
+              <div style="margin-top:0.75rem; padding-top:0.5rem; border-top:1px solid #1e293b; display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); margin-right:0.2rem;">Pipeline Steps:</span>
+                ${stepsSummary || '<span style="font-size:0.725rem; color:var(--text-muted);">None</span>'}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        bodyEl.innerHTML = summaryHtml + listHtml;
+      } catch (err) {
+        bodyEl.innerHTML = `<p style="color:var(--danger); padding:1rem;">Failed to load task logs: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    // 3. EXECUTIONS
+    async function loadExecutions() {
+      const filter = document.getElementById('execFilter')?.value || '';
+      const url = filter ? `/api/executions?status=${filter}` : '/api/executions';
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        document.getElementById('execCount').innerText = data.length || 0;
+        const tbody = document.getElementById('executionsTableBody');
+
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No executions found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(ex => {
+          const statusBadge = `<span class="badge badge-${(ex.status || '').toLowerCase()}">${ex.status}</span>`;
+          const target = ex.selected?.title ? `<a href="${ex.selected.url}" target="_blank" style="color:#60a5fa; text-decoration:none;">${escapeHtml(ex.selected.title.slice(0, 50))}...</a>` : '<span style="color:var(--text-muted);">-</span>';
+          const time = ex.createdAt ? new Date(ex.createdAt).toLocaleTimeString() : '';
+          return `
+            <tr>
+              <td>${statusBadge}</td>
+              <td><strong>${escapeHtml(ex.taskName || ex.systemTask || 'Task')}</strong></td>
+              <td><span class="badge badge-${ex.platform || 'quora'}">${ex.platform || 'quora'}</span></td>
+              <td style="color:var(--text-muted); font-size:0.775rem;">${time}</td>
+              <td>${ex.ai?.callCount || 0} calls</td>
+              <td>${target}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm" onclick="viewExecution('${ex.executionId}')">Inspect</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load executions', err);
+      }
+    }
+
+    async function viewExecution(id) {
+      openModal('execModal');
+      document.getElementById('modalExecTitle').innerText = `Execution: ${id.slice(0, 12)}...`;
+      document.getElementById('modalExecBody').innerHTML = '<p style="color:var(--text-muted);">Loading execution details...</p>';
+
+      try {
+        const res = await fetch(`/api/executions/${id}`);
+        const ex = await res.json();
+
+        let timelineHtml = (ex.steps || []).map(s => {
+          const okClass = s.status === 'OK' ? 'ok' : (s.status === 'FAILED' ? 'failed' : '');
+          return `
+            <div class="timeline-item ${okClass}">
+              <div class="timeline-stage">${s.stage}</div>
+              <div class="timeline-desc">
+                <div>${escapeHtml(s.message || '')}</div>
+                ${s.pageUrl ? `<div style="font-size:0.7rem; color:#60a5fa; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(s.pageUrl)}</div>` : ''}
+              </div>
+              <div class="timeline-time">${s.durationMs ? `${s.durationMs}ms` : ''}</div>
+            </div>
+          `;
+        }).join('');
+
+        let failureHtml = '';
+        if (ex.failure && ex.failure.reason) {
+          failureHtml = `
+            <div style="background:#450a0a; border:1px solid #991b1b; padding:0.75rem; border-radius:8px; margin-bottom:1rem; color:#fca5a5;">
+              <strong>Failure in stage "${ex.failure.stage}":</strong>
+              <div style="margin-top:0.25rem; font-size:0.85rem;">${escapeHtml(ex.failure.reason)}</div>
+            </div>
+          `;
+        }
+
+        let draftHtml = '';
+        if (ex.answer) {
+          draftHtml = `
+            <div style="margin:1rem 0;">
+              <label><strong>AI Generated Content:</strong></label>
+              <div style="background:#0b1120; border:1px solid #1e293b; padding:0.75rem; border-radius:8px; font-size:0.85rem; color:#e2e8f0; white-space:pre-wrap;">${escapeHtml(ex.answer)}</div>
+            </div>
+          `;
+        }
+
+        let proofHtml = '';
+        if (ex.proof?.proofUrl || ex.proof?.screenshotPath) {
+          proofHtml = `
+            <div style="background:#064e3b; border:1px solid #059669; padding:0.75rem; border-radius:8px; margin-top:1rem;">
+              <strong>Publication Proof:</strong>
+              <div><a href="${ex.proof.proofUrl}" target="_blank" style="color:#6ee7b7;">🔗 View Post Link</a></div>
+              ${ex.proof.screenshotPath ? `<div style="margin-top:0.5rem;"><img src="/${ex.proof.screenshotPath}" style="max-height:180px; border-radius:6px; cursor:pointer;" onclick="zoomImage('/${ex.proof.screenshotPath}')"></div>` : ''}
+            </div>
+          `;
+        }
+
+        document.getElementById('modalExecBody').innerHTML = `
+          ${failureHtml}
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; font-size:0.825rem; margin-bottom:1rem; background:#0b1120; padding:0.75rem; border-radius:8px;">
+            <div><strong>Status:</strong> <span class="badge badge-${(ex.status || '').toLowerCase()}">${ex.status}</span></div>
+            <div><strong>Platform:</strong> ${ex.platform}</div>
+            <div><strong>Session:</strong> ${ex.sessionId}</div>
+            <div><strong>AI Calls:</strong> ${ex.ai?.callCount || 0} (${ex.ai?.promptTokens || 0} in / ${ex.ai?.completionTokens || 0} out)</div>
+          </div>
+
+          <label><strong>Pipeline Execution Steps:</strong></label>
+          <div class="timeline">${timelineHtml || '<p style="color:var(--text-muted);">No steps recorded.</p>'}</div>
+
+          ${draftHtml}
+          ${proofHtml}
+        `;
+      } catch (err) {
+        document.getElementById('modalExecBody').innerHTML = `<p style="color:var(--danger);">${err.message}</p>`;
+      }
+    }
+
+    // 4. PUBLICATIONS
+    async function loadPublications() {
+      try {
+        const res = await fetch('/api/publications');
+        const data = await res.json();
+        document.getElementById('pubCount').innerText = data.length || 0;
+        const container = document.getElementById('publicationsContainer');
+
+        if (!data || data.length === 0) {
+          container.innerHTML = '<p style="color:var(--text-muted); grid-column:1/-1;">No published posts yet. Completed campaigns will display screenshots and links here.</p>';
+          return;
+        }
+
+        container.innerHTML = data.map(p => {
+          const shot = p.screenshotPath ? `/${p.screenshotPath}` : '';
+          const time = p.publishedAt ? new Date(p.publishedAt).toLocaleString() : '';
+          return `
+            <div class="proof-card">
+              ${shot ? `<img src="${shot}" class="proof-img" onclick="zoomImage('${shot}')" title="Click to zoom screenshot">` : '<div style="height:120px; background:#0b1120; display:flex; align-items:center; justify-content:center; color:var(--text-muted);">No screenshot</div>'}
+              <div class="proof-content">
+                <div>
+                  <h3 style="font-size:0.9rem; font-weight:600; margin-bottom:0.4rem; line-height:1.3;">${escapeHtml(p.targetTitle || 'Published Post')}</h3>
+                  <p style="font-size:0.75rem; color:var(--text-muted); line-height:1.4;">${escapeHtml((p.finalAnswer || '').slice(0, 110))}...</p>
+                </div>
+                <div style="margin-top:0.75rem; padding-top:0.5rem; border-top:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.7rem; color:var(--text-muted);">${time}</span>
+                  <a href="${p.proofUrl}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔗 View Post</a>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load publications', err);
+      }
+    }
+
+    // 5. API CONSOLE
+    let lastApiResponse = '';
+    async function testApi(endpoint) {
+      document.getElementById('apiEndpointUrl').innerText = `Request: GET ${endpoint}`;
+      document.getElementById('apiResponseView').innerText = 'Loading...';
+      try {
+        const res = await fetch(endpoint);
+        const json = await res.json();
+        lastApiResponse = JSON.stringify(json, null, 2);
+        document.getElementById('apiResponseView').innerText = lastApiResponse;
+      } catch (err) {
+        document.getElementById('apiResponseView').innerText = `Error: ${err.message}`;
+      }
+    }
+
+    function copyApiResponse() {
+      if (!lastApiResponse) return;
+      navigator.clipboard.writeText(lastApiResponse);
+      showToast('JSON copied to clipboard!');
+    }
+
+    // Global Refresh
+    function refreshAll() {
+      loadSessions();
+      loadTasks();
+      loadExecutions();
+      loadPublications();
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    // Polling Loop
+    setInterval(() => {
+      const isEnabled = document.getElementById('autoPollCheck')?.checked;
+      if (!isEnabled) return;
+      if (activeTab === 'executions') loadExecutions();
+      if (activeTab === 'sessions') loadSessions();
+      if (activeTab === 'tasks') loadTasks();
+    }, 4000);
+
+    // Initial boot
+    refreshAll();
+    loadSessionOptions();
+  </script>
+</body>
+</html>

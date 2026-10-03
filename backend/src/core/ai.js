@@ -129,11 +129,14 @@ async function writeAnswer(usage, { prompt, content, question }) {
   const isComment = Boolean(question?.isComment);
   const isEnd = Boolean(question?.isEnd);
   const isTwitter = Boolean(question?.isTwitter);
+  const isFacebook = Boolean(question?.isFacebook);
 
   let systemPrompt = 'Write one helpful, detailed, and genuine Quora answer to this question. Reply with JSON only: {"answer":"Full text of the answer","reason":"one short sentence"}. Mention the campaign link only if naturally relevant.';
 
   if (isTwitter) {
     systemPrompt = 'Write one punchy, insightful, and authentic reply to this Twitter/X post. Must be strictly under 280 characters. Sound like a knowledgeable peer, natural and conversational, not a marketer. Reply with JSON only: {"answer":"Full text of the reply","reason":"one short sentence"}. Mention the campaign link/product only if it naturally fits.';
+  } else if (isFacebook) {
+    systemPrompt = 'Write one friendly, helpful, and natural comment on this Facebook post. Keep it engaging, authentic, and conversational, matching standard Facebook social interactions. Reply with JSON only: {"answer":"Full text of the comment","reason":"one short sentence"}. Mention the campaign link/product only if it genuinely fits.';
   } else if (isComment) {
     systemPrompt = 'Write one concise, engaging, and genuine comment replying directly to the top post on this Quora discussion. Reply with JSON only: {"answer":"Full text of the comment","reason":"one short sentence"}. Mention the campaign link only if naturally relevant.';
   } else if (isEnd) {

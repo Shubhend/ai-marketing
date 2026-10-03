@@ -96,6 +96,32 @@
       }
     },
     {
+      "name": "03c Create Facebook session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+              "if (body._id) pm.collectionVariables.set('sessionMongoId', body._id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Facebook Account\",\n  \"sessionId\": \"my-facebook-account\",\n  \"platform\": \"facebook\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sessions",
+        "description": "Creates a Facebook session entry with a distinct sessionId."
+      }
+    },
+    {
       "name": "04 Login session",
       "request": {
         "method": "POST",
@@ -245,6 +271,58 @@
         },
         "url": "{{baseUrl}}/api/tasks",
         "description": "Searches Twitter/X for relevant posts, ranks them, and posts an engaging reply/comment on the top post."
+      }
+    },
+    {
+      "name": "08e Create Twitter comment task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Twitter Tweet Comment Campaign\",\n  \"sessionId\": \"my-twitter-account\",\n  \"task\": \"twitter-comment\",\n  \"prompt\": \"Find recent tweets discussing startup growth. Write an engaging, insightful comment on the tweet.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Searches Twitter/X for relevant posts and comments on the best tweet."
+      }
+    },
+    {
+      "name": "08f Create Facebook comment task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Facebook Post Comment Campaign\",\n  \"sessionId\": \"my-facebook-account\",\n  \"task\": \"facebook-comment\",\n  \"prompt\": \"Find recent Facebook discussions about fitness coaching and workouts. Post a helpful, engaging comment on the post.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Searches Facebook public posts, ranks them by engagement, and posts a natural comment."
       }
     },
     {
