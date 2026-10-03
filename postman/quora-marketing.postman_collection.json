@@ -1,0 +1,341 @@
+{
+  "info": {
+    "name": "Quora Marketing API",
+    "description": "Run the requests from top to bottom.\n\n1. List platforms and available tasks.\n2. Create a session with name and sessionId.\n3. Login session (opens browser; old instances auto-stopped). Log in to Quora manually.\n4. Confirm session (detects login, auto-closes browser, sets READY).\n5. Create a marketing task referencing that session.\n6. Track execution steps, AI calls, and publication proof.\n\nNote: Set BROWSER_HEADLESS=true in .env if you want background task execution without browser UI popups.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "sessionId", "value": "my-quora-account" },
+    { "key": "sessionMongoId", "value": "" },
+    { "key": "systemTask", "value": "quora-marketing" },
+    { "key": "taskId", "value": "" },
+    { "key": "scheduledTaskId", "value": "" },
+    { "key": "executionId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 List platforms",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/platforms"
+      }
+    },
+    {
+      "name": "02 List available tasks",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const list = pm.response.json();",
+              "if (Array.isArray(list) && list[0]) pm.collectionVariables.set('systemTask', list[0].id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/tasks/available",
+        "description": "Returns available system tasks like quora-marketing."
+      }
+    },
+    {
+      "name": "03 Create session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+              "if (body._id) pm.collectionVariables.set('sessionMongoId', body._id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Quora Account\",\n  \"sessionId\": \"my-quora-account\",\n  \"platform\": \"quora\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sessions",
+        "description": "Creates a session entry with a distinct sessionId and returns _id and status."
+      }
+    },
+    {
+      "name": "03b Create Twitter session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);",
+              "if (body._id) pm.collectionVariables.set('sessionMongoId', body._id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Twitter Account\",\n  \"sessionId\": \"my-twitter-account\",\n  \"platform\": \"twitter\"\n}"
+        },
+        "url": "{{baseUrl}}/api/sessions",
+        "description": "Creates a Twitter/X session entry with a distinct sessionId."
+      }
+    },
+    {
+      "name": "04 Login session",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/sessions/{{sessionId}}/login",
+        "description": "Automatically terminates any old running Chrome instance and opens a fresh browser with this session profile. Log in to Quora manually, then hit Confirm session."
+      }
+    },
+    {
+      "name": "05 Confirm session",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.sessionId) pm.collectionVariables.set('sessionId', body.sessionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/sessions/{{sessionId}}/confirm",
+        "description": "Detects login, automatically closes the browser window, and updates status to READY."
+      }
+    },
+    {
+      "name": "06 Close session browser (optional)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/sessions/{{sessionId}}/close",
+        "description": "Manually stops and closes any open Chrome instance for this session."
+      }
+    },
+    {
+      "name": "07 List sessions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/sessions",
+        "description": "Returns all registered browser sessions with _id, sessionId, and real-time status."
+      }
+    },
+    {
+      "name": "08 Create task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Payment Gateways Campaign\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"task\": \"{{systemTask}}\",\n  \"prompt\": \"Find recent Quora questions about payment gateways for startups. Write a useful answer. Mention https://example.com only when it genuinely fits.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Pass either sessionId (e.g. my-quora-account) or the Mongo _id. If runNow=true, execution begins immediately."
+      }
+    },
+    {
+      "name": "08b Create comment task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Top Post Comment Campaign\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"task\": \"quora-comment\",\n  \"prompt\": \"Find discussions about fitness workout routines. Write a insightful, value-adding comment on the top post.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Posts a comment on the top post of the highest-ranked Quora discussion instead of creating a standalone answer."
+      }
+    },
+    {
+      "name": "08c Create answer at end task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Answer At End Campaign\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"task\": \"quora-end\",\n  \"prompt\": \"Find discussions about fitness workout routines. Provide a valuable conclusion and reply at the end of the thread.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Posts an answer or reply at the end of the discussion thread."
+      }
+    },
+    {
+      "name": "08d Create Twitter reply task and run now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('taskId', body.id);",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Twitter Growth Reply Campaign\",\n  \"sessionId\": \"my-twitter-account\",\n  \"task\": \"twitter-marketing\",\n  \"prompt\": \"Find recent tweets discussing AI marketing tools. Write an authentic, value-adding reply under 280 characters.\",\n  \"runNow\": true\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Searches Twitter/X for relevant posts, ranks them, and posts an engaging reply/comment on the top post."
+      }
+    },
+    {
+      "name": "09 Get execution status and logs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/executions/{{executionId}}",
+        "description": "Check run status. Shows steps (session, search, extract, rank, open, generate, validate, submit, verify), ai.callCount, token usage, and publication proof."
+      }
+    },
+    {
+      "name": "10 List all executions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/executions"
+      }
+    },
+    {
+      "name": "11 List failed executions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/executions?status=FAILED",
+        "description": "Shows failed runs with stage, pageUrl, and reason."
+      }
+    },
+    {
+      "name": "12 List publications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/publications",
+        "description": "Shows posted answers with proof URL and screenshot path."
+      }
+    },
+    {
+      "name": "13 Create scheduled task",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.id) pm.collectionVariables.set('scheduledTaskId', body.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Recurring Fitness Marketing\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"task\": \"{{systemTask}}\",\n  \"prompt\": \"Find recent Quora questions about fitness. Write a useful answer. Mention https://example.com only when it genuinely fits.\",\n  \"everyHours\": 6\n}"
+        },
+        "url": "{{baseUrl}}/api/tasks",
+        "description": "Repeats automatically every 6 hours using this session."
+      }
+    },
+    {
+      "name": "14 Run saved task now",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.executionId) pm.collectionVariables.set('executionId', body.executionId);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/tasks/{{scheduledTaskId}}/run",
+        "description": "Triggers an on-demand run of the saved task."
+      }
+    },
+    {
+      "name": "15 Delete scheduled task",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/api/tasks/{{scheduledTaskId}}",
+        "description": "Deletes task and halts its timer."
+      }
+    }
+  ]
+}
