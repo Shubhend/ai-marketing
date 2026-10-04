@@ -211,3 +211,25 @@ Import `postman/quora-marketing.postman_collection.json` into Postman. Requests 
 7. `09 Get execution status and logs`
 8. `12 List publications`
 9. `13 Create scheduled task`
+
+## Remote Browser Setup (Method 1: Browserless / Remote CDP)
+
+You can run the browser on a remote VPS or server using Browserless Docker:
+
+```bash
+docker run -d -p 3000:3000 --restart always --name browserless \
+  -e "DEFAULT_HEADLESS=false" \
+  -e "ENABLE_DEBUGGER=true" \
+  ghcr.io/browserless/chromium
+```
+
+Then in `backend/.env`, set:
+
+```env
+SERVER_BROWSER=http://<YOUR_SERVER_IP>:3000
+```
+
+- **Interactive Debugger**: You can view the live browser and log in directly at `http://<YOUR_SERVER_IP>:3000/debugger`.
+- **Automatic Cookie Persistence**: Cookies are automatically captured and saved to `backend/sessions/<sessionId>/cookies.json` so your session remains logged in across server restarts.
+- If `SERVER_BROWSER` is omitted or empty, the application runs Chromium locally.
+
