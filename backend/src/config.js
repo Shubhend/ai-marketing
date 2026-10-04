@@ -18,6 +18,7 @@ const config = {
   proofDir: path.resolve(root, process.env.PROOF_DIR || 'proofs'),
   duplicateCooldownDays: number(process.env.DUPLICATE_COOLDOWN_DAYS, 30),
   headless: process.env.BROWSER_HEADLESS === 'true',
+  serverBrowser: (process.env.SERVER_BROWSER || process.env.server_browser || process.env.BROWSER_SERVER_URL || '').trim(),
 };
 
 function safeMessage(error) {
