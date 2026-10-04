@@ -1,204 +1,253 @@
+const { chromium } = require('playwright');
 const fs = require('fs/promises');
 const path = require('path');
-const { chromium } = require('playwright');
-const config = require('../config');
-const { Session } = require('../models');
 
 let context = null;
 let page = null;
 let activeSessionId = null;
 let mode = null; // 'login' | 'run' | null
 
-function statusFile(sessionId) {
-  return path.join(config.sessionDir, sessionId, 'status.json');
+/**
+ * Detect server environment.
+ *
+ * SERVER:
+ *   BROWSER_SERVER=true
+ *
+ * LOCAL:
+ *   BROWSER_SERVER is not set
+ */
+function isServerEnvironment() {
+  return process.env.BROWSER_SERVER === 'true';
 }
 
-function httpError(message, statusCode, code) {
-  const error = new Error(message);
-  error.status = statusCode;
-  if (code) error.code = code;
-  return error;
+/**
+ * Get X display for server.
+ *
+ * Default:
+ *   :99
+ */
+function getDisplay() {
+  return process.env.DISPLAY || ':99';
 }
 
-async function close() {
-  if (context) {
-    try {
-      const pages = context.pages();
-      for (const p of pages) await p.close().catch(() => {});
-      await context.close().catch(() => {});
-    } catch {}
-    context = null;
-    page = null;
-  }
-  activeSessionId = null;
-  mode = null;
-}
-
-async function getStoredStatus(sessionId) {
-  try {
-    const saved = JSON.parse(await fs.readFile(statusFile(sessionId), 'utf8'));
-    return saved.status || 'CREATING';
-  } catch {
-    const doc = await Session.findOne({ sessionId });
-    return doc?.status || 'CREATING';
-  }
-}
-
-async function setStatus(sessionId, nextStatus) {
-  const file = statusFile(sessionId);
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify({ status: nextStatus, updatedAt: new Date().toISOString() }));
-  await Session.findOneAndUpdate(
-    { sessionId },
-    { status: nextStatus },
-    { upsert: true },
-  );
-}
-
-function liveStatus(sessionId) {
-  if (mode && activeSessionId === sessionId) return 'RUNNING';
-  return null;
-}
-
-async function snapshot(sessionId = 'quora') {
-  const live = liveStatus(sessionId);
-  if (live) return { sessionId, status: live };
-  const status = await getStoredStatus(sessionId);
-  return { sessionId, status };
-}
-
-async function init() {
-  // Sync all sessions to ensure no stale RUNNING states
-  await Session.updateMany({ status: 'RUNNING' }, { $set: { status: 'READY' } });
-}
-
-async function reserve(sessionId) {
-  // Auto-stop old running browser if it was abandoned in a previous run/login
-  if (context && activeSessionId !== sessionId) {
-    await close();
-  }
-  if (mode && activeSessionId === sessionId) {
-    throw httpError(`Session "${sessionId}" is already in use`, 409, 'SESSION_BUSY');
-  }
-  const session = await Session.findOne({ sessionId });
-  if (!session || session.status !== 'READY') {
-    throw httpError(`Session "${sessionId}" is not READY. Please log in first.`, 409, 'NOT_READY');
-  }
-  mode = 'run';
-  activeSessionId = sessionId;
-}
-
-function release() {
-  mode = null;
-  activeSessionId = null;
-}
-
+/**
+ * Launch persistent Chromium profile.
+ *
+ * Local:
+ *   launch(sessionId, false)
+ *   -> normal visible Chrome
+ *
+ * Server:
+ *   launch(sessionId, false)
+ *   -> visible Chrome on Xvfb
+ *
+ * Automation:
+ *   launch(sessionId, true)
+ *   -> headless Chrome/Chromium
+ */
 async function launch(sessionId, isHeadless = false) {
-  // Auto stop old running Chrome instance if present
-  await close();
+  if (context) {
+    return context;
+  }
+
+  const server = isServerEnvironment();
 
   activeSessionId = sessionId;
-  const dir = path.join(config.sessionDir, sessionId, 'browser-profile');
-  await fs.mkdir(dir, { recursive: true });
+
+  const dir = path.join(
+    config.sessionDir,
+    sessionId,
+    'browser-profile'
+  );
+
+  await fs.mkdir(dir, {
+    recursive: true,
+  });
+
+  console.log('======================================');
+  console.log('Launching browser');
+  console.log(
+    'Environment:',
+    server ? 'SERVER' : 'LOCAL'
+  );
+  console.log('Session:', sessionId);
+  console.log('Headless:', isHeadless);
+  console.log('Profile:', dir);
+
+  /*
+   * Only configure DISPLAY on server.
+   *
+   * Local machine is completely untouched.
+   */
+  if (server) {
+    const display = getDisplay();
+
+    process.env.DISPLAY = display;
+
+    console.log('DISPLAY:', display);
+  }
 
   const launchOptions = {
     headless: isHeadless,
-    viewport: isHeadless ? { width: 1280, height: 800 } : null,
-    ignoreDefaultArgs: ['--enable-automation'],
+
+    viewport: isHeadless
+      ? {
+          width: 1280,
+          height: 800,
+        }
+      : null,
+
+    ignoreDefaultArgs: [
+      '--enable-automation',
+    ],
+
     args: [
       '--disable-blink-features=AutomationControlled',
-      isHeadless ? '--window-size=1280,800' : '--start-maximized',
+
+      isHeadless
+        ? '--window-size=1280,800'
+        : '--start-maximized',
+
       '--no-sandbox',
       '--disable-infobars',
       '--disable-dev-shm-usage',
       '--lang=en-US,en',
+
+      /*
+       * Server-only Chromium arguments.
+       *
+       * Local launch arguments remain unchanged.
+       */
+      ...(server
+        ? [
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+          ]
+        : []),
     ],
   };
 
+  /*
+   * =====================================================
+   * Try installed Google Chrome
+   * =====================================================
+   */
   try {
-    // Prefer installed Google Chrome if available
-    context = await chromium.launchPersistentContext(dir, {
-      ...launchOptions,
-      channel: 'chrome',
-    });
-  } catch {
-    // Fall back to bundled Chromium
-    context = await chromium.launchPersistentContext(dir, launchOptions);
+    console.log('Trying Google Chrome...');
+
+    context =
+      await chromium.launchPersistentContext(
+        dir,
+        {
+          ...launchOptions,
+          channel: 'chrome',
+        }
+      );
+
+    console.log(
+      'Google Chrome launched successfully.'
+    );
+  } catch (chromeError) {
+    console.warn(
+      'Google Chrome launch failed:',
+      chromeError?.message || chromeError
+    );
+
+    /*
+     * ===================================================
+     * Fallback to Playwright bundled Chromium
+     * ===================================================
+     */
+    try {
+      console.log(
+        'Trying Playwright Chromium...'
+      );
+
+      context =
+        await chromium.launchPersistentContext(
+          dir,
+          launchOptions
+        );
+
+      console.log(
+        'Playwright Chromium launched successfully.'
+      );
+    } catch (chromiumError) {
+      console.error(
+        'Playwright Chromium launch failed:',
+        chromiumError?.message || chromiumError
+      );
+
+      context = null;
+      activeSessionId = null;
+
+      throw chromiumError;
+    }
   }
 
-  // Anti-bot detection masking
+  /*
+   * =====================================================
+   * Browser initialization
+   * =====================================================
+   */
+
+  context.setDefaultTimeout(
+    config.browserTimeout || 30000
+  );
+
   await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    if (!window.chrome) window.chrome = {};
-    if (!window.chrome.runtime) window.chrome.runtime = {};
-    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    Object.defineProperty(
+      navigator,
+      'webdriver',
+      {
+        get: () => undefined,
+      }
+    );
+
+    Object.defineProperty(
+      navigator,
+      'languages',
+      {
+        get: () => [
+          'en-US',
+          'en',
+        ],
+      }
+    );
+
+    Object.defineProperty(
+      navigator,
+      'plugins',
+      {
+        get: () => [
+          1,
+          2,
+          3,
+          4,
+          5,
+        ],
+      }
+    );
   });
 
-  page = context.pages()[0] || await context.newPage();
-  page.setDefaultTimeout(30000);
-}
+  /*
+   * =====================================================
+   * Existing page handling
+   * =====================================================
+   */
 
-async function beginLogin(platform, sessionId = 'quora') {
-  // Auto-stop old running Chrome instance if present
-  await close();
+  const pages = context.pages();
 
-  mode = 'login';
-  activeSessionId = sessionId;
-  try {
-    // Always visible (headless: false) for manual user login
-    await launch(sessionId, false);
-    await page.goto(platform.homeUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await setStatus(sessionId, 'RUNNING');
-  } catch (error) {
-    await close();
-    release();
-    throw error;
-  }
-}
-
-async function confirmLogin(platform, sessionId = 'quora') {
-  if (!page || activeSessionId !== sessionId) {
-    // Open a quick browser instance to verify the saved profile session
-    await launch(sessionId, false);
-    await page.goto(platform.homeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  if (pages.length > 0) {
+    page = pages[0];
+  } else {
+    page = await context.newPage();
   }
 
-  let ok = false;
-  try {
-    ok = await platform.isLoggedIn(page);
-  } finally {
-    // Auto-close browser after confirm
-    await close();
-    release();
-  }
+  console.log(
+    'Browser ready. Pages:',
+    context.pages().length
+  );
 
-  const nextStatus = ok ? 'READY' : 'ERROR';
-  await setStatus(sessionId, nextStatus);
-  if (!ok) throw httpError(`${platform.name || 'Platform'} login was not detected. Please make sure you are logged in.`, 400);
-  return nextStatus;
+  return context;
 }
-
-async function runWith(platform, sessionId, work) {
-  try {
-    // Respect BROWSER_HEADLESS env configuration for task runs
-    await launch(sessionId, config.headless);
-    return await work(page);
-  } finally {
-    // Auto-close browser after task completes
-    await close();
-    release();
-  }
-}
-
-module.exports = {
-  init,
-  snapshot,
-  reserve,
-  release,
-  close,
-  beginLogin,
-  confirmLogin,
-  runWith,
-  setStatus,
-};
