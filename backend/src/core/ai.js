@@ -183,7 +183,7 @@ async function extractSearchKeywords(usage, { prompt, content, platformName = 'Q
       return extracted;
     }
   } catch (err) {
-    // If AI rate limit or timeout happens, fall back silently
+    console.warn('[ai:extractSearchKeywords] Groq call failed or returned error:', err?.message || err);
   }
   return null;
 }

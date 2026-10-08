@@ -94,17 +94,20 @@ async function runFlow({ execution, platform, page, usage }) {
   });
 
   const brief = execution.content || execution.prompt;
-  let query = await ai.extractSearchKeywords(usage, {
-    prompt: execution.prompt,
-    content: brief,
-    platformName: platform.name || 'Quora',
-  });
-
-  if (!query) {
-    query = platform.searchText(execution.prompt, brief);
-  }
-
   await step(execution, page, 'search', usage, async () => {
+    let query = await ai.extractSearchKeywords(usage, {
+      prompt: execution.prompt,
+      content: brief,
+      platformName: platform.name || 'Quora',
+    });
+
+    if (!query) {
+      console.log(`[search] AI keyword extraction returned empty or failed, using platform fallback search`);
+      query = platform.searchText(execution.prompt, brief);
+    } else {
+      console.log(`[search] AI extracted search query: "${query}"`);
+    }
+
     await platform.openSearch(page, query);
     return { message: `query=${query}` };
   });
