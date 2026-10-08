@@ -12,7 +12,7 @@ const config = {
   mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/quora_marketing',
   groqKey: process.env.GROQ_API_KEY || '',
   groqModel: process.env.GROQ_MODEL || 'qwen/qwen3.8-27b',
-  groqMaxCalls: number(process.env.GROQ_MAX_CALLS_PER_RUN, 2),
+  groqMaxCalls: number(process.env.GROQ_MAX_CALLS_PER_RUN, 4),
   groqTimeoutMs: number(process.env.GROQ_TIMEOUT_MS, 30000),
   sessionDir: path.resolve(root, process.env.SESSION_DIR || 'sessions'),
   proofDir: path.resolve(root, process.env.PROOF_DIR || 'proofs'),

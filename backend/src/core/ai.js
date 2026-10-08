@@ -112,7 +112,8 @@ async function rank(usage, { prompt, content, candidates }) {
     upvotes: item.upvotes || 0,
   }));
 
-  const cleanTopic = (prompt || content || '').slice(0, 120);
+  const fullPrompt = [prompt, typeof content === 'string' && content !== prompt ? content : ''].filter(Boolean).join('\n');
+  const cleanTopic = fullPrompt.slice(0, 500);
 
   const result = await ask(usage, 'rank', 800, [
     {
@@ -125,7 +126,8 @@ async function rank(usage, { prompt, content, candidates }) {
 }
 
 async function writeAnswer(usage, { prompt, content, question }) {
-  const cleanObjective = (prompt || content || '').slice(0, 200);
+  const fullPrompt = [prompt, typeof content === 'string' && content !== prompt ? content : ''].filter(Boolean).join('\n');
+  const cleanObjective = fullPrompt.slice(0, 1500);
   const isComment = Boolean(question?.isComment);
   const isEnd = Boolean(question?.isEnd);
   const isTwitter = Boolean(question?.isTwitter);
@@ -160,4 +162,30 @@ async function writeAnswer(usage, { prompt, content, question }) {
   return { answer: String(result.answer || '').trim(), reason: String(result.reason || '').slice(0, 180) };
 }
 
-module.exports = { rank, writeAnswer };
+async function extractSearchKeywords(usage, { prompt, content, platformName = 'Quora' }) {
+  const fullText = [prompt, typeof content === 'string' ? content : content?.title || ''].filter(Boolean).join('\n');
+  const cleanInput = fullText.slice(0, 1500);
+
+  try {
+    const result = await ask(usage, 'extract-search', 250, [
+      {
+        role: 'system',
+        content: `You are an expert search engine query optimizer. Given a marketing task description/prompt, extract the single best, most natural 2-4 word search phrase to type into ${platformName}'s search bar to find relevant community discussions/questions. Output JSON only: {"keywords":"2 to 4 keywords"}. Do not include URLs, domain names, instructions, or quotes.`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ prompt: cleanInput }),
+      },
+    ]);
+
+    const extracted = String(result?.keywords || '').trim().replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ');
+    if (extracted && extracted.length >= 3) {
+      return extracted;
+    }
+  } catch (err) {
+    // If AI rate limit or timeout happens, fall back silently
+  }
+  return null;
+}
+
+module.exports = { rank, writeAnswer, extractSearchKeywords };

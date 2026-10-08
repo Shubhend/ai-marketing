@@ -94,7 +94,16 @@ async function runFlow({ execution, platform, page, usage }) {
   });
 
   const brief = execution.content || execution.prompt;
-  const query = platform.searchText(execution.prompt, brief);
+  let query = await ai.extractSearchKeywords(usage, {
+    prompt: execution.prompt,
+    content: brief,
+    platformName: platform.name || 'Quora',
+  });
+
+  if (!query) {
+    query = platform.searchText(execution.prompt, brief);
+  }
+
   await step(execution, page, 'search', usage, async () => {
     await platform.openSearch(page, query);
     return { message: `query=${query}` };

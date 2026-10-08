@@ -10,6 +10,15 @@ function searchText(prompt, content) {
     raw = prompt || '';
   }
 
+  // If user explicitly specifies a line like "Search in Quora\nkeyword 1\nkeyword 2", prioritize the first focused line
+  const searchMatch = raw.match(/search(?:\s+in\s+quora)?[\s:]*\n+([^\n]+)/i);
+  if (searchMatch && searchMatch[1]?.trim()) {
+    const candidateLine = searchMatch[1].replace(/https?:\/\/\S+/gi, '').replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (candidateLine.length >= 3 && candidateLine.split(' ').length <= 5) {
+      return candidateLine;
+    }
+  }
+
   // Remove URLs and domain names
   raw = raw.replace(/https?:\/\/\S+/gi, ' ').replace(/\b\w+\.(com|org|net|io|co|in)\b/gi, ' ');
 
