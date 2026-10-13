@@ -230,6 +230,12 @@ async function openQuestion(page, url) {
   };
 }
 
+const FB_STEP_DELAY_MS = 450;
+
+async function fbPause(page, ms = FB_STEP_DELAY_MS) {
+  await page.waitForTimeout(ms);
+}
+
 function commentAsEditor(page) {
   return page.getByRole('textbox', { name: /^Comment as\b/i }).last();
 }
@@ -297,9 +303,11 @@ async function openCommentEditor(page) {
   const alreadyOpen = await openedCommentEditor(page);
   if (alreadyOpen) {
     console.log('[facebook] Comment popup is already open.');
+    await fbPause(page);
     return alreadyOpen;
   }
 
+  await fbPause(page);
   const ranked = await rankedCommentButtons(page);
   if (!ranked.length) throw new Error('Facebook comment button was not found in the feed');
   console.log(`[facebook] Found ${ranked.length} Leave a comment buttons in the feed.`);
@@ -307,7 +315,7 @@ async function openCommentEditor(page) {
   for (const target of ranked) {
     console.log(`[facebook] Clicking comment button at y=${target.top} text="${target.countText}"`);
     await target.button.scrollIntoViewIfNeeded().catch(() => {});
-    await page.waitForTimeout(300);
+    await fbPause(page, 350);
 
     const icon = target.button.locator('[data-ad-rendering-role="comment_button"]').first();
     if (await icon.count().catch(() => 0)) {
@@ -315,15 +323,17 @@ async function openCommentEditor(page) {
     } else {
       await target.button.click({ timeout: 5000 }).catch(() => {});
     }
+    await fbPause(page, 600);
 
     let editor = null;
     for (let attempt = 0; attempt < 12; attempt += 1) {
       editor = await openedCommentEditor(page);
       if (editor) break;
-      await page.waitForTimeout(400);
+      await fbPause(page, 400);
     }
     if (editor) {
       console.log('[facebook] Comment popup editor is visible.');
+      await fbPause(page);
       return editor;
     }
     console.log('[facebook] This feed button did not open the comment box.');
@@ -332,47 +342,115 @@ async function openCommentEditor(page) {
   throw new Error('Facebook comment popup did not open');
 }
 
-async function typeIntoCommentEditor(page, editor, text) {
-  const probe = text.slice(0, 24);
+async function isPostCommentEnabled(page) {
+  const btn = page.locator('#focused-state-composer-submit [aria-label="Post comment"]').last();
+  const disabled = await btn.getAttribute('aria-disabled').catch(() => 'true');
+  return disabled !== 'true';
+}
+
+async function focusLexicalEditor(page, editor) {
   await editor.scrollIntoViewIfNeeded().catch(() => {});
-
-  const paragraph = editor.locator('p').first();
-  if (await paragraph.isVisible().catch(() => false)) {
-    await paragraph.click({ timeout: 5000 });
-  } else {
-    await editor.click({ timeout: 5000 });
-  }
-  await page.waitForTimeout(250);
-
-  console.log('[facebook] Inserting comment text...');
-  await page.keyboard.insertText(text);
-  await page.waitForTimeout(500);
-
-  let written = await editorPlainText(editor);
-  if (probe && written.includes(probe)) return written;
-
-  console.log('[facebook] insertText was not accepted. Typing with key events...');
+  await fbPause(page, 300);
   await editor.click({ timeout: 5000 });
-  await page.keyboard.press('Control+A').catch(() => {});
-  await page.keyboard.press('Backspace').catch(() => {});
-  await editor.pressSequentially(text, { delay: 12 });
-  await page.waitForTimeout(400);
-  written = await editorPlainText(editor);
-  if (probe && written.includes(probe)) return written;
-
-  console.log('[facebook] Key events were not accepted. Trying Lexical insertText...');
-  await editor.evaluate((node, value) => {
+  await fbPause(page, 250);
+  await editor.evaluate((node) => {
+    node.scrollIntoView({ block: 'center', behavior: 'instant' });
     node.focus();
-    const target = node.querySelector('p') || node;
+    node.click();
+    const paragraph = node.querySelector('p');
+    if (!paragraph) return;
+    paragraph.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
     const range = document.createRange();
-    range.selectNodeContents(target);
-    range.collapse(true);
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
     const selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
-    document.execCommand('insertText', false, value);
-  }, text);
-  await page.waitForTimeout(400);
+  });
+  await fbPause(page, 350);
+}
+
+async function lexicalPaste(page, editor, value) {
+  return editor.evaluate((node, text) => {
+    node.focus();
+    const paragraph = node.querySelector('p') || node;
+    paragraph.focus();
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    node.dispatchEvent(new ClipboardEvent('paste', {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: data,
+    }));
+    return (node.innerText || '').replace(/\s+/g, ' ').trim();
+  }, value);
+}
+
+async function lexicalBeforeInput(page, editor, value) {
+  return editor.evaluate((node, text) => {
+    node.focus();
+    const paragraph = node.querySelector('p') || node;
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    for (const char of text) {
+      const before = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: char,
+      });
+      node.dispatchEvent(before);
+      if (!before.defaultPrevented) {
+        node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
+      }
+    }
+    return (node.innerText || '').replace(/\s+/g, ' ').trim();
+  }, value);
+}
+
+async function typeIntoCommentEditor(page, editor, text) {
+  const probe = text.slice(0, 24);
+  await focusLexicalEditor(page, editor);
+
+  console.log('[facebook] Pasting comment into Lexical editor...');
+  let written = await lexicalPaste(page, editor, text);
+  await fbPause(page, 500);
+  if (probe && written.includes(probe) && await isPostCommentEnabled(page)) return written;
+
+  console.log('[facebook] Paste incomplete; refocusing and pasting again...');
+  await focusLexicalEditor(page, editor);
+  written = await lexicalPaste(page, editor, text);
+  await fbPause(page, 500);
+  if (probe && written.includes(probe) && await isPostCommentEnabled(page)) return written;
+
+  console.log('[facebook] Trying keyboard.type fallback...');
+  await focusLexicalEditor(page, editor);
+  await page.keyboard.type(text, { delay: 22 });
+  await fbPause(page, 600);
+  written = await editorPlainText(editor);
+  if (probe && written.includes(probe) && await isPostCommentEnabled(page)) return written;
+
+  console.log('[facebook] Trying beforeinput events...');
+  await focusLexicalEditor(page, editor);
+  written = await lexicalBeforeInput(page, editor, text);
+  await fbPause(page, 500);
+  if (probe && written.includes(probe)) return written;
+
+  console.log('[facebook] Trying clipboard + Ctrl+V...');
+  const context = page.context();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+  await page.evaluate(async (value) => {
+    await navigator.clipboard.writeText(value);
+  }, text).catch(() => {});
+  await focusLexicalEditor(page, editor);
+  await fbPause(page, 300);
+  await page.keyboard.press('Control+V');
+  await fbPause(page, 600);
   return editorPlainText(editor);
 }
 
@@ -381,28 +459,42 @@ async function submitAnswer(page, comment) {
   if (!text) throw new Error('Facebook comment is empty');
 
   console.log('[facebook] Starting comment submission flow...');
+  await fbPause(page, 300);
   const editor = await openCommentEditor(page);
+  await fbPause(page);
   const written = await typeIntoCommentEditor(page, editor, text);
   const probe = text.slice(0, 24);
   if (!written || !written.includes(probe)) {
     throw new Error('Facebook comment box did not accept the text');
   }
   console.log(`[facebook] Editor accepted the comment (${written.length} chars).`);
+  await fbPause(page);
 
   const postButton = postCommentButton(page);
   console.log('[facebook] Waiting for Post comment to enable, then clicking it...');
   await postButton.waitFor({ state: 'visible', timeout: 8000 });
+  await fbPause(page, 350);
+  for (let wait = 0; wait < 24; wait += 1) {
+    if (await isPostCommentEnabled(page)) break;
+    await fbPause(page, 300);
+  }
+  if (!(await isPostCommentEnabled(page))) {
+    throw new Error('Facebook Post comment stayed disabled after typing');
+  }
+  await fbPause(page, 400);
   await postButton.click({ timeout: 10000 });
-  await page.waitForTimeout(2000);
+  await fbPause(page, 800);
 
   const stillInEditor = await editorPlainText(editor).catch(() => '');
   if (stillInEditor.includes(probe)) {
     console.log('[facebook] Text is still in the box. Pressing Enter to post...');
     await editor.click({ timeout: 3000 }).catch(() => {});
+    await fbPause(page, 350);
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(2000);
+    await fbPause(page, 800);
   }
 
+  await fbPause(page, 1200);
   console.log('[facebook] Comment submission completed.');
 }
 
