@@ -54,6 +54,11 @@ function parseCount(text) {
   return parseFloat(val) || 0;
 }
 
+function isReelTarget(url) {
+  const href = String(url || '');
+  return /\/(reel|reels)(\/|$|\?)/i.test(href);
+}
+
 function rank(candidates, picks) {
   const byId = new Map((picks || []).map((pick) => [String(pick.id), pick]));
   return candidates.map((candidate, index) => {
@@ -70,7 +75,7 @@ function rank(candidates, picks) {
     if (commentsNum > 0) {
       score += Math.min(commentsNum * 0.05, 1.0);
     }
-    if (isReelOrVideoTarget(candidate.url, candidate)) {
+    if (isReelTarget(candidate.url)) {
       score = 0;
     } else if (score <= 0 && candidate.url && (candidate.title || candidate.snippet)) {
       score = 1.25;
@@ -125,31 +130,41 @@ async function openSearch(page, query) {
 const EXTRACT_POST_LIMIT = 15;
 const EXTRACT_SCROLL_ATTEMPTS = 6;
 
-function isReelOrVideoTarget(url, row = {}) {
-  const href = String(url || '');
-  const text = `${row.title || ''} ${row.snippet || ''}`.toLowerCase();
-  if (/fb\.watch|video\.php/i.test(href)) return true;
-  if (/\/(reel|reels|videos|watch)(\/|$|\?)/i.test(href)) return true;
-  if (/\b(reels?|watch video|suggested reels)\b/i.test(text)) return true;
-  return false;
-}
-
 async function extractPostsFromDom(page) {
   return page.evaluate((limit) => {
-    const isReelOrVideoHref = (href) => {
-      if (!href) return false;
-      if (/fb\.watch|video\.php/i.test(href)) return true;
-      return /\/(reel|reels|videos|watch)(\/|$|\?)/i.test(href);
+    const isReelHref = (href) => (
+      !!href && /\/(reel|reels)(\/|$|\?)/i.test(href)
+    );
+
+    const storyFromHref = (href) => {
+      const story = href.match(/[?&]story_fbid=([^&]+)/i)?.[1]
+        || href.match(/[?&]fbid=([^&]+)/i)?.[1];
+      const pageId = href.match(/[?&]id=([^&]+)/i)?.[1];
+      if (!story) return '';
+      const idPart = pageId ? `&id=${pageId}` : '';
+      if (/permalink\.php/i.test(href)) {
+        return `https://www.facebook.com/permalink.php?story_fbid=${story}${idPart}`;
+      }
+      if (/story\.php/i.test(href)) {
+        return `https://www.facebook.com/story.php?story_fbid=${story}${idPart}`;
+      }
+      if (/photo\.php/i.test(href)) {
+        return `https://www.facebook.com/photo.php?fbid=${story}${idPart}`;
+      }
+      return '';
     };
 
     const canonicalPostUrl = (href) => {
-      if (!href || isReelOrVideoHref(href)) return '';
+      if (!href || isReelHref(href)) return '';
+      const fromQuery = storyFromHref(href);
+      if (fromQuery) return fromQuery;
+
       try {
         const u = new URL(href, 'https://www.facebook.com');
         if (/hashtag|\/search\//i.test(u.href)) return '';
 
         const path = u.pathname.replace(/\/+$/, '') || '/';
-        if (/\/(reel|reels|videos|watch)\b/i.test(path)) return '';
+        if (/\/(reel|reels)\b/i.test(path)) return '';
 
         const story = u.searchParams.get('story_fbid') || u.searchParams.get('fbid');
         const pageId = u.searchParams.get('id');
@@ -157,13 +172,17 @@ async function extractPostsFromDom(page) {
         if (/permalink\.php|story\.php|photo\.php/i.test(path)) {
           if (!story) return '';
           const idPart = pageId ? `&id=${pageId}` : '';
-          return `${u.origin}${path}?story_fbid=${story}${idPart}`;
+          const key = path.includes('photo') ? 'fbid' : 'story_fbid';
+          return `${u.origin}${path}?${key}=${story}${idPart}`;
         }
 
         if (/\/groups\/[^/]+\/permalink\/\d+/i.test(path)) {
           return `${u.origin}${path}`;
         }
         if (/\/posts\/pfbid/i.test(path) || /\/posts\/\d+/i.test(path)) {
+          return `${u.origin}${path}`;
+        }
+        if (/\/(videos|photos|watch)\//i.test(path)) {
           return `${u.origin}${path}`;
         }
 
@@ -175,21 +194,22 @@ async function extractPostsFromDom(page) {
 
     const isPostHref = (href) => {
       if (!href || /hashtag|\/search\//i.test(href)) return false;
-      if (isReelOrVideoHref(href)) return false;
+      if (isReelHref(href)) return false;
       return (
         /\/posts\//.test(href)
         || /permalink\.php/.test(href)
         || /\/permalink\//.test(href)
         || /story\.php/.test(href)
         || /photo\.php/.test(href)
+        || /\/videos\//.test(href)
+        || /\/photos\//.test(href)
+        || /\/watch\//.test(href)
       );
     };
 
-    const isReelOrVideoRow = (row) => {
+    const isReelRow = (row) => {
       if (!row) return true;
-      if (isReelOrVideoHref(row.url || '')) return true;
-      const text = `${row.title || ''} ${row.snippet || ''}`.toLowerCase();
-      return /\b(reels?|watch video|suggested reels)\b/i.test(text);
+      return isReelHref(row.url || '');
     };
 
     const pickPostUrl = (root) => {
@@ -251,7 +271,7 @@ async function extractPostsFromDom(page) {
 
     const pushRow = (row) => {
       if (!row) return;
-      if (isReelOrVideoRow(row)) return;
+      if (isReelRow(row)) return;
       if (/sponsored|paid partnership/i.test((row.title || '').slice(0, 80))) return;
       if (row.url) {
         if (seenUrls.has(row.url)) return;
@@ -265,7 +285,7 @@ async function extractPostsFromDom(page) {
     };
 
     const rowFromLink = (link) => {
-      if (isReelOrVideoHref(link.href || '')) return null;
+      if (isReelHref(link.href || '')) return null;
       const url = canonicalPostUrl(link.href);
       if (!url) return null;
 
@@ -294,7 +314,8 @@ async function extractPostsFromDom(page) {
 
     // 1) Search / feed: every unique canonical post link (fixes permalink.php dedupe)
     for (const link of document.querySelectorAll('a[href]')) {
-      if (!isPostHref(link.href || '')) continue;
+      const raw = link.href || '';
+      if (!isPostHref(raw) && !/\/posts\/pfbid/i.test(raw) && !/story_fbid=/i.test(raw)) continue;
       pushRow(rowFromLink(link));
       if (found.length >= limit) return found;
     }
@@ -329,7 +350,7 @@ async function extract(page) {
   for (let attempt = 0; attempt < EXTRACT_SCROLL_ATTEMPTS; attempt += 1) {
     const batch = await extractPostsFromDom(page);
     for (const row of batch) {
-      if (isReelOrVideoTarget(row.url, row)) continue;
+      if (isReelTarget(row.url)) continue;
       if (row.url) {
         if (!byUrl.has(row.url)) byUrl.set(row.url, row);
       } else if (row.title) {
