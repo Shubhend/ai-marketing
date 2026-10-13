@@ -70,7 +70,9 @@ function rank(candidates, picks) {
     if (commentsNum > 0) {
       score += Math.min(commentsNum * 0.05, 1.0);
     }
-    if (score <= 0 && candidate.url && (candidate.title || candidate.snippet)) {
+    if (isReelOrVideoTarget(candidate.url, candidate)) {
+      score = 0;
+    } else if (score <= 0 && candidate.url && (candidate.title || candidate.snippet)) {
       score = 1.25;
     }
     return { ...candidate, score, reason: String(pick.reason || '').slice(0, 180) };
@@ -123,15 +125,32 @@ async function openSearch(page, query) {
 const EXTRACT_POST_LIMIT = 15;
 const EXTRACT_SCROLL_ATTEMPTS = 6;
 
+function isReelOrVideoTarget(url, row = {}) {
+  const href = String(url || '');
+  const text = `${row.title || ''} ${row.snippet || ''}`.toLowerCase();
+  if (/fb\.watch|video\.php/i.test(href)) return true;
+  if (/\/(reel|reels|videos|watch)(\/|$|\?)/i.test(href)) return true;
+  if (/\b(reels?|watch video|suggested reels)\b/i.test(text)) return true;
+  return false;
+}
+
 async function extractPostsFromDom(page) {
   return page.evaluate((limit) => {
+    const isReelOrVideoHref = (href) => {
+      if (!href) return false;
+      if (/fb\.watch|video\.php/i.test(href)) return true;
+      return /\/(reel|reels|videos|watch)(\/|$|\?)/i.test(href);
+    };
+
     const canonicalPostUrl = (href) => {
-      if (!href) return '';
+      if (!href || isReelOrVideoHref(href)) return '';
       try {
         const u = new URL(href, 'https://www.facebook.com');
         if (/hashtag|\/search\//i.test(u.href)) return '';
 
         const path = u.pathname.replace(/\/+$/, '') || '/';
+        if (/\/(reel|reels|videos|watch)\b/i.test(path)) return '';
+
         const story = u.searchParams.get('story_fbid') || u.searchParams.get('fbid');
         const pageId = u.searchParams.get('id');
 
@@ -147,9 +166,6 @@ async function extractPostsFromDom(page) {
         if (/\/posts\/pfbid/i.test(path) || /\/posts\/\d+/i.test(path)) {
           return `${u.origin}${path}`;
         }
-        if (/\/(videos|photos|reel|watch)\//i.test(path)) {
-          return `${u.origin}${path}`;
-        }
 
         return `${u.origin}${path}`.split('#')[0];
       } catch {
@@ -159,17 +175,21 @@ async function extractPostsFromDom(page) {
 
     const isPostHref = (href) => {
       if (!href || /hashtag|\/search\//i.test(href)) return false;
+      if (isReelOrVideoHref(href)) return false;
       return (
         /\/posts\//.test(href)
         || /permalink\.php/.test(href)
         || /\/permalink\//.test(href)
         || /story\.php/.test(href)
         || /photo\.php/.test(href)
-        || /\/videos\//.test(href)
-        || /\/photos\//.test(href)
-        || /\/watch\//.test(href)
-        || /\/reel\//.test(href)
       );
+    };
+
+    const isReelOrVideoRow = (row) => {
+      if (!row) return true;
+      if (isReelOrVideoHref(row.url || '')) return true;
+      const text = `${row.title || ''} ${row.snippet || ''}`.toLowerCase();
+      return /\b(reels?|watch video|suggested reels)\b/i.test(text);
     };
 
     const pickPostUrl = (root) => {
@@ -183,7 +203,6 @@ async function extractPostsFromDom(page) {
         if (/pfbid/i.test(href)) score += 12;
         if (/\/posts\//.test(href)) score += 8;
         if (/story_fbid=/i.test(href)) score += 10;
-        if (/\/videos\//.test(href) || /\/photos\//.test(href)) score += 6;
         if (href.length > 45) score += 2;
         if (score > bestScore) {
           bestScore = score;
@@ -232,6 +251,7 @@ async function extractPostsFromDom(page) {
 
     const pushRow = (row) => {
       if (!row) return;
+      if (isReelOrVideoRow(row)) return;
       if (/sponsored|paid partnership/i.test((row.title || '').slice(0, 80))) return;
       if (row.url) {
         if (seenUrls.has(row.url)) return;
@@ -245,6 +265,7 @@ async function extractPostsFromDom(page) {
     };
 
     const rowFromLink = (link) => {
+      if (isReelOrVideoHref(link.href || '')) return null;
       const url = canonicalPostUrl(link.href);
       if (!url) return null;
 
@@ -308,6 +329,7 @@ async function extract(page) {
   for (let attempt = 0; attempt < EXTRACT_SCROLL_ATTEMPTS; attempt += 1) {
     const batch = await extractPostsFromDom(page);
     for (const row of batch) {
+      if (isReelOrVideoTarget(row.url, row)) continue;
       if (row.url) {
         if (!byUrl.has(row.url)) byUrl.set(row.url, row);
       } else if (row.title) {
