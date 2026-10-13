@@ -123,15 +123,18 @@ async function extractPostsFromDom(page) {
       return stripped;
     };
 
-    const isPostHref = (href) => (
-      /\/posts\//.test(href)
-      || /permalink\.php/.test(href)
-      || /\/permalink\//.test(href)
-      || /story\.php/.test(href)
-      || /\/videos\//.test(href)
-      || /\/photos\//.test(href)
-      || /\/watch\//.test(href)
-    );
+    const isPostHref = (href) => {
+      if (!href || /hashtag|\/search\//i.test(href)) return false;
+      return (
+        /\/posts\//.test(href)
+        || /permalink\.php/.test(href)
+        || /\/permalink\//.test(href)
+        || /story\.php/.test(href)
+        || /\/videos\//.test(href)
+        || /\/photos\//.test(href)
+        || /\/watch\//.test(href)
+      );
+    };
 
     const pickPostUrl = (root) => {
       const anchors = [...root.querySelectorAll('a[href]')];
@@ -265,41 +268,130 @@ function isSinglePostView(url) {
   return /\/posts\/|permalink\.php|\/permalink\/|story\.php|\/photos\/|\/videos\/|\/watch\//i.test(url || '');
 }
 
-async function markTargetPostRoot(page, postUrl) {
-  await page.evaluate((targetUrl) => {
-    const normalize = (href) => (href || '').split('?')[0].split('#')[0];
-    const target = normalize(targetUrl);
-    const idMatch = target.match(/(posts\/pfbid[\w-]+|posts\/\d+|story_fbid=\d+|permalink\/\d+)/i);
-    const idNeedle = idMatch ? idMatch[0] : '';
+async function resolveTargetPostEngagement(page, postUrl) {
+  const targetUrl = postUrl || page.url();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const result = await page.evaluate((fullUrl) => {
+      const clean = (href) => (href || '').split('#')[0];
+      const pathOnly = (href) => clean(href).split('?')[0];
 
-    let best = null;
-    for (const art of document.querySelectorAll('div[role="article"]')) {
-      for (const a of art.querySelectorAll('a[href]')) {
-        const href = normalize(a.href);
-        if ((idNeedle && href.includes(idNeedle)) || href === target || target.includes(href) && href.length > 30) {
-          best = art;
-          break;
+      const tokens = new Set();
+      const raw = clean(fullUrl);
+      tokens.add(pathOnly(raw));
+      try {
+        const u = new URL(raw);
+        u.searchParams.forEach((value) => {
+          if (value && /\d{5,}/.test(value)) tokens.add(value);
+        });
+      } catch {
+        // ignore invalid URL
+      }
+      const pfbid = raw.match(/posts\/(pfbid[A-Za-z0-9_-]+)/i);
+      if (pfbid) tokens.add(pfbid[1]);
+      const postId = raw.match(/posts\/(\d{8,})/);
+      if (postId) tokens.add(postId[1]);
+      const perm = raw.match(/permalink\/(\d+)/);
+      if (perm) tokens.add(perm[1]);
+
+      const matchesPost = (href) => {
+        const h = clean(href);
+        if (!h || /hashtag|\/search\//i.test(h)) return false;
+        const hp = pathOnly(h);
+        for (const token of tokens) {
+          if (!token) continue;
+          if (h.includes(token) || hp.includes(token)) return true;
+        }
+        return false;
+      };
+
+      const isCommentAction = (el) => {
+        if (!el || el.getAttribute('aria-label') !== 'Leave a comment') return false;
+        if (el.getAttribute('role') !== 'button') return false;
+        if (el.closest('a[href]')) return false;
+        return true;
+      };
+
+      const commentButtons = [...document.querySelectorAll('[aria-label="Leave a comment"][role="button"]')]
+        .filter(isCommentAction);
+
+      let bestBtn = null;
+      let bestCard = null;
+      let bestScore = -1;
+
+      for (const btn of commentButtons) {
+        let card = btn.parentElement;
+        let matched = false;
+        for (let depth = 0; depth < 35 && card; depth += 1) {
+          const anchors = card.querySelectorAll ? [...card.querySelectorAll('a[href]')] : [];
+          for (const a of anchors) {
+            if (matchesPost(a.href)) {
+              matched = true;
+              break;
+            }
+          }
+          if (matched) break;
+          card = card.parentElement;
+        }
+
+        const rect = btn.getBoundingClientRect();
+        let score = 0;
+        if (matched) score += 2000;
+        if (btn.querySelector('[data-ad-rendering-role="comment_button"]')) score += 100;
+        if (rect.width > 0 && rect.height > 0) score += 50;
+        score += Math.max(0, 800 - rect.top);
+        if (btn.closest('div[role="main"]')) score += 30;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestBtn = btn;
+          bestCard = card || btn.closest('div[role="main"]') || btn.parentElement;
         }
       }
-      if (best) break;
+
+      if (!bestBtn && commentButtons.length) {
+        bestBtn = commentButtons[0];
+        bestCard = bestBtn.closest('div[role="main"]') || bestBtn.parentElement;
+        bestScore = 1;
+      }
+
+      document.querySelectorAll('[data-fb-target-post]').forEach((el) => el.removeAttribute('data-fb-target-post'));
+      document.querySelectorAll('[data-fb-target-comment]').forEach((el) => el.removeAttribute('data-fb-target-comment'));
+
+      if (!bestBtn) {
+        return { marked: false, buttonCount: commentButtons.length };
+      }
+
+      if (bestCard) bestCard.setAttribute('data-fb-target-post', '1');
+      bestBtn.setAttribute('data-fb-target-comment', '1');
+
+      const rect = bestBtn.getBoundingClientRect();
+      return {
+        marked: true,
+        buttonCount: commentButtons.length,
+        score: bestScore,
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    }, targetUrl).catch(() => ({ marked: false }));
+
+    if (result?.marked) {
+      console.log(`[facebook] Resolved comment target: ${JSON.stringify(result)}`);
+      return result;
     }
 
-    document.querySelectorAll('[data-fb-target-post]').forEach((el) => {
-      el.removeAttribute('data-fb-target-post');
-    });
+    await page.mouse.wheel(0, 350).catch(() => {});
+    await page.waitForTimeout(600);
+  }
 
-    const root = best
-      || document.querySelector('div[role="main"] div[role="article"]')
-      || document.querySelector('div[role="article"]')
-      || document.querySelector('div[role="main"]');
-    if (root) root.setAttribute('data-fb-target-post', '1');
-  }, postUrl).catch(() => {});
+  console.log('[facebook] Could not resolve a comment button for this post URL');
+  return { marked: false };
 }
 
 async function openQuestion(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.waitForTimeout(3000);
-  await markTargetPostRoot(page, url);
+  await resolveTargetPostEngagement(page, url);
   await page.waitForTimeout(500);
 
   const postData = await page.evaluate(() => {
@@ -344,16 +436,9 @@ async function isValidPostCommentButton(button) {
   return button.evaluate((el) => {
     if (el.getAttribute('aria-label') !== 'Leave a comment') return false;
     if (el.getAttribute('role') !== 'button') return false;
-    if (!el.querySelector('[data-ad-rendering-role="comment_button"]')) return false;
     if (el.closest('a[href]')) return false;
-
-    let walk = el.parentElement;
-    for (let depth = 0; depth < 8 && walk; depth += 1) {
-      const chunk = (walk.innerText || '').replace(/\s+/g, ' ');
-      if (/Like|Comment|Share/i.test(chunk) && chunk.length < 120) return true;
-      walk = walk.parentElement;
-    }
-    return true;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }).catch(() => false);
 }
 
@@ -361,16 +446,15 @@ async function clickLeaveCommentButton(page, button) {
   await button.scrollIntoViewIfNeeded().catch(() => {});
   await fbPause(page, 350);
 
-  const box = await button.boundingBox().catch(() => null);
-  if (box && box.width > 4 && box.height > 4) {
-    const x = box.x + Math.min(box.width * 0.25, 28);
-    const y = box.y + box.height / 2;
-    console.log(`[facebook] Clicking comment action at (${Math.round(x)}, ${Math.round(y)})`);
-    await page.mouse.click(x, y);
-    return;
-  }
-
-  await button.click({ timeout: 8000 });
+  await button.evaluate((el) => {
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const target = el.querySelector('[data-ad-rendering-role="comment_button"]') || el;
+    target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+    target.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+    el.click();
+  });
 }
 
 async function waitForCommentEditor(page) {
@@ -382,21 +466,26 @@ async function waitForCommentEditor(page) {
   return null;
 }
 
-async function openCommentOnTargetPost(page) {
-  const root = page.locator('[data-fb-target-post="1"]').first();
-  if (!(await root.count().catch(() => 0))) return null;
-
-  const button = root.locator(postCommentActionSelector()).first();
+async function openCommentOnTargetPost(page, postUrl) {
+  let button = page.locator('[data-fb-target-comment="1"]').first();
+  if (!(await button.count().catch(() => 0))) {
+    await resolveTargetPostEngagement(page, postUrl || page.url());
+    button = page.locator('[data-fb-target-comment="1"]').first();
+  }
+  if (!(await button.count().catch(() => 0))) {
+    console.log('[facebook] No tagged comment button on page.');
+    return null;
+  }
   if (!(await button.isVisible().catch(() => false))) {
-    console.log('[facebook] No comment action on marked target post.');
+    console.log('[facebook] Tagged comment button is not visible.');
     return null;
   }
   if (!(await isValidPostCommentButton(button))) {
-    console.log('[facebook] Target post comment button failed validation.');
+    console.log('[facebook] Tagged comment button failed validation.');
     return null;
   }
 
-  console.log('[facebook] Clicking comment on marked target post only.');
+  console.log('[facebook] Clicking tagged Leave a comment button (no page coordinates).');
   await clickLeaveCommentButton(page, button);
   await fbPause(page, 600);
   const editor = await waitForCommentEditor(page);
@@ -412,7 +501,16 @@ async function rankedCommentButtons(page) {
   const useScoped = (await scopedRoot.count().catch(() => 0)) > 0;
   const container = useScoped ? scopedRoot : page.locator('div[role="feed"]').first();
   const hasContainer = await container.count().catch(() => 0);
-  const buttons = (hasContainer ? container : page).locator(postCommentActionSelector());
+  const tagged = page.locator('[data-fb-target-comment="1"]').first();
+  if (await tagged.count().catch(() => 0)) {
+    if (await tagged.isVisible().catch(() => false) && await isValidPostCommentButton(tagged)) {
+      return [{ button: tagged, score: 9999, top: 0, countText: 'tagged' }];
+    }
+  }
+
+  const buttons = (hasContainer ? container : page).locator(
+    `${postCommentActionSelector()}, [aria-label="Leave a comment"][role="button"]`,
+  );
   const count = await buttons.count();
   const ranked = [];
 
@@ -470,15 +568,16 @@ async function openCommentEditor(page) {
 
   await fbPause(page);
 
-  if (isSinglePostView(page.url()) || (await page.locator('[data-fb-target-post="1"]').count())) {
-    const fromTarget = await openCommentOnTargetPost(page);
+  const postUrl = page.url();
+  if (isSinglePostView(postUrl) || (await page.locator('[data-fb-target-comment="1"]').count())) {
+    const fromTarget = await openCommentOnTargetPost(page, postUrl);
     if (fromTarget) return fromTarget;
-    if (isSinglePostView(page.url())) {
-      await markTargetPostRoot(page, page.url());
-      await fbPause(page, 400);
-      const retryTarget = await openCommentOnTargetPost(page);
-      if (retryTarget) return retryTarget;
-    }
+  }
+  if (isSinglePostView(postUrl)) {
+    await resolveTargetPostEngagement(page, postUrl);
+    await fbPause(page, 400);
+    const retryTarget = await openCommentOnTargetPost(page, postUrl);
+    if (retryTarget) return retryTarget;
   }
 
   const ranked = await rankedCommentButtons(page);
@@ -619,7 +718,7 @@ async function submitAnswer(page, comment) {
   if (!text) throw new Error('Facebook comment is empty');
 
   console.log('[facebook] Starting comment submission flow...');
-  await markTargetPostRoot(page, page.url());
+  await resolveTargetPostEngagement(page, page.url());
   await fbPause(page, 300);
   const editor = await openCommentEditor(page);
   await fbPause(page);
