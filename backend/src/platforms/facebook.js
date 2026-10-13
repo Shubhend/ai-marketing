@@ -231,13 +231,17 @@ async function openQuestion(page, url) {
 }
 
 async function submitAnswer(page, comment) {
-  // 1. Locate comment trigger or active comment box
-  let editor = page.locator('div[role="textbox"][contenteditable="true"]').first();
-  let isEditorReady = await editor.isVisible().catch(() => false);
+  // Check if a popup dialog with a comment box is already open
+  let dialog = page.locator('div[role="dialog"], div[aria-modal="true"]').first();
+  let isDialogVisible = await dialog.isVisible().catch(() => false);
 
-  if (!isEditorReady) {
-    // Look for Comment button/trigger to reveal comment box
+  // If no dialog is open or comment box is not visible, find and click the Comment button
+  if (!isDialogVisible) {
     const commentTriggers = [
+      'div[aria-label="Leave a comment"][role="button"]',
+      'div[aria-label*="Leave a comment" i][role="button"]',
+      'div[role="button"]:has([data-ad-rendering-role="comment_button"])',
+      '[data-ad-rendering-role="comment_button"]',
       'div[role="button"][aria-label*="Comment" i]',
       'div[role="button"]:has-text("Comment")',
       'span:has-text("Comment")',
@@ -245,42 +249,87 @@ async function submitAnswer(page, comment) {
       'div[aria-label*="Write a public comment" i]',
     ];
 
+    let clicked = false;
     for (const sel of commentTriggers) {
       const btn = page.locator(sel).first();
       if (await btn.isVisible().catch(() => false)) {
+        console.log(`[facebook] Clicking comment trigger: "${sel}"`);
         await btn.scrollIntoViewIfNeeded().catch(() => {});
         await page.waitForTimeout(300);
         await btn.click().catch(() => {});
+        clicked = true;
         break;
       }
     }
-    await page.waitForTimeout(1000);
+
+    if (!clicked) {
+      // Fallback: evaluate document querySelector for comment button
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-ad-rendering-role="comment_button"]') ||
+                    document.querySelector('div[aria-label*="Leave a comment"]') ||
+                    document.querySelector('div[role="button"][aria-label*="comment" i]');
+        if (btn) {
+          const clickable = btn.closest('[role="button"]') || btn;
+          clickable.click();
+        }
+      }).catch(() => {});
+    }
+
+    // Wait for popup dialog or inline comment section to appear
+    await page.waitForTimeout(1500);
+
+    // Re-check dialog visibility after click
+    dialog = page.locator('div[role="dialog"], div[aria-modal="true"]').first();
+    isDialogVisible = await dialog.isVisible().catch(() => false);
   }
 
-  // 2. Poll for active comment input
+  // 2. Poll for active comment input (prioritizing popup dialog if open)
   const editorSelectors = [
     'div[role="textbox"][contenteditable="true"]',
     'div[aria-label*="Write a comment" i][contenteditable="true"]',
     'div[aria-label*="Write a public comment" i][contenteditable="true"]',
+    'div[aria-label*="Leave a comment" i][contenteditable="true"]',
     'div[aria-label*="Comment as" i][contenteditable="true"]',
+    'div[data-lexical-editor="true"]',
+    'form div[role="textbox"][contenteditable="true"]',
+    'form div[contenteditable="true"]',
     'div[contenteditable="true"]',
   ];
 
   let activeEditor = null;
+  const scope = isDialogVisible ? dialog : page;
+
   for (let i = 0; i < 20; i++) {
-    for (const sel of editorSelectors) {
-      const loc = page.locator(sel).first();
-      if (await loc.isVisible().catch(() => false)) {
-        activeEditor = loc;
-        break;
+    // First try inside popup dialog
+    if (isDialogVisible) {
+      for (const sel of editorSelectors) {
+        const loc = dialog.locator(sel).first();
+        if (await loc.isVisible().catch(() => false)) {
+          activeEditor = loc;
+          console.log(`[facebook] Found comment editor inside popup dialog: "${sel}"`);
+          break;
+        }
       }
     }
+
+    // Fallback to page level
+    if (!activeEditor) {
+      for (const sel of editorSelectors) {
+        const loc = page.locator(sel).first();
+        if (await loc.isVisible().catch(() => false)) {
+          activeEditor = loc;
+          console.log(`[facebook] Found comment editor on page: "${sel}"`);
+          break;
+        }
+      }
+    }
+
     if (activeEditor) break;
     await page.waitForTimeout(400);
   }
 
   if (!activeEditor) {
-    activeEditor = page.locator('div[role="textbox"]').first();
+    activeEditor = scope.locator('div[role="textbox"]').first();
     await activeEditor.waitFor({ state: 'visible', timeout: 10000 });
   }
 
@@ -289,12 +338,19 @@ async function submitAnswer(page, comment) {
   await activeEditor.click();
   await page.waitForTimeout(400);
 
+  // If editor has an inner paragraph or placeholder, focus inside it
+  const innerP = activeEditor.locator('p').first();
+  if (await innerP.isVisible().catch(() => false)) {
+    await innerP.click().catch(() => {});
+    await page.waitForTimeout(200);
+  }
+
   await page.keyboard.insertText(comment);
   await page.waitForTimeout(500);
 
   const currentContent = (await activeEditor.innerText().catch(() => '')).trim();
   if (!currentContent) {
-    await activeEditor.fill(comment).catch(() => {});
+    await activeEditor.pressSequentially(comment, { delay: 15 }).catch(() => {});
   }
   await page.waitForTimeout(1000);
 
@@ -302,14 +358,18 @@ async function submitAnswer(page, comment) {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(1000);
 
-  // Fallback: If submit icon button is present, click it
+  // Fallback: If submit icon button is present (check inside dialog first), click it
   const sendSelectors = [
     'div[aria-label="Comment"][role="button"]',
     'div[aria-label="Press Enter to post."]',
-    'div[aria-label="Send"]',
+    'div[aria-label*="Send" i][role="button"]',
+    'div[aria-label*="Post" i][role="button"]',
+    'button[type="submit"]',
   ];
+
+  const submitScope = isDialogVisible ? dialog : page;
   for (const sSel of sendSelectors) {
-    const sBtn = page.locator(sSel).first();
+    const sBtn = submitScope.locator(sSel).first();
     if (await sBtn.isVisible().catch(() => false)) {
       await sBtn.click().catch(() => {});
       break;
@@ -325,8 +385,10 @@ async function answerVisible(page, answer) {
   if (!sample) return false;
 
   for (let i = 0; i < 8; i++) {
+    // Check both inside popup dialog (if open) and page body
+    const dialogText = (await page.locator('div[role="dialog"]').innerText().catch(() => '')).replace(/\s+/g, ' ');
     const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ');
-    if (bodyText.includes(sample)) {
+    if (dialogText.includes(sample) || bodyText.includes(sample)) {
       return true;
     }
     await page.waitForTimeout(1000);
