@@ -59,6 +59,18 @@ function isReelTarget(url) {
   return /\/(reel|reels)(\/|$|\?)/i.test(href);
 }
 
+function postIdentityKey(url) {
+  const href = String(url || '');
+  if (!href) return '';
+  const pfbid = href.match(/pfbid[A-Za-z0-9_-]+/i)?.[0];
+  if (pfbid) return pfbid.toLowerCase();
+  const story = href.match(/[?&]story_fbid=([^&]+)/i)?.[1];
+  if (story) return `story:${story.toLowerCase()}`;
+  const groupPerm = href.match(/\/groups\/[^/]+\/permalink\/(\d+)/i)?.[1];
+  if (groupPerm) return `gperm:${groupPerm}`;
+  return href.split('?')[0].toLowerCase();
+}
+
 function rank(candidates, picks) {
   const byId = new Map((picks || []).map((pick) => [String(pick.id), pick]));
   return candidates.map((candidate, index) => {
@@ -77,8 +89,10 @@ function rank(candidates, picks) {
     }
     if (isReelTarget(candidate.url)) {
       score = 0;
-    } else if (score <= 0 && candidate.url && (candidate.title || candidate.snippet)) {
-      score = 1.25;
+    } else if (candidate.url) {
+      score = Math.max(score, 1.5);
+    } else if (candidate.title || candidate.snippet) {
+      score = Math.max(score, 1.0);
     }
     return { ...candidate, score, reason: String(pick.reason || '').slice(0, 180) };
   }).sort((left, right) => right.score - left.score);
@@ -121,9 +135,9 @@ async function openSearch(page, query) {
   await page.locator('div[role="feed"], a[href*="/posts/"], a[href*="permalink.php"]').first()
     .waitFor({ state: 'attached', timeout: 15000 })
     .catch(() => {});
-  for (let scroll = 0; scroll < 3; scroll += 1) {
-    await page.mouse.wheel(0, 700).catch(() => {});
-    await page.waitForTimeout(1200);
+  for (let scroll = 0; scroll < 5; scroll += 1) {
+    await page.mouse.wheel(0, 800).catch(() => {});
+    await page.waitForTimeout(1400);
   }
 }
 
@@ -132,211 +146,153 @@ const EXTRACT_SCROLL_ATTEMPTS = 6;
 
 async function extractPostsFromDom(page) {
   return page.evaluate((limit) => {
-    const isReelHref = (href) => (
-      !!href && /\/(reel|reels)(\/|$|\?)/i.test(href)
-    );
+    const isReelHref = (href) => !!href && /\/(reel|reels)(\/|$|\?)/i.test(href);
 
-    const storyFromHref = (href) => {
-      const story = href.match(/[?&]story_fbid=([^&]+)/i)?.[1]
-        || href.match(/[?&]fbid=([^&]+)/i)?.[1];
-      const pageId = href.match(/[?&]id=([^&]+)/i)?.[1];
-      if (!story) return '';
-      const idPart = pageId ? `&id=${pageId}` : '';
-      if (/permalink\.php/i.test(href)) {
-        return `https://www.facebook.com/permalink.php?story_fbid=${story}${idPart}`;
-      }
-      if (/story\.php/i.test(href)) {
-        return `https://www.facebook.com/story.php?story_fbid=${story}${idPart}`;
-      }
-      if (/photo\.php/i.test(href)) {
-        return `https://www.facebook.com/photo.php?fbid=${story}${idPart}`;
-      }
-      return '';
+    const identityKey = (url) => {
+      if (!url) return '';
+      const pfbid = url.match(/pfbid[A-Za-z0-9_-]+/i)?.[0];
+      if (pfbid) return pfbid.toLowerCase();
+      const story = url.match(/[?&]story_fbid=([^&]+)/i)?.[1];
+      if (story) return `story:${story.toLowerCase()}`;
+      const gperm = url.match(/\/groups\/[^/]+\/permalink\/(\d+)/i)?.[1];
+      if (gperm) return `gperm:${gperm}`;
+      return url.split('?')[0].toLowerCase();
     };
 
     const canonicalPostUrl = (href) => {
       if (!href || isReelHref(href)) return '';
-      const fromQuery = storyFromHref(href);
-      if (fromQuery) return fromQuery;
+      const raw = href.replace(/\\\//g, '/');
 
-      try {
-        const u = new URL(href, 'https://www.facebook.com');
-        if (/hashtag|\/search\//i.test(u.href)) return '';
-
-        const path = u.pathname.replace(/\/+$/, '') || '/';
-        if (/\/(reel|reels)\b/i.test(path)) return '';
-
-        const story = u.searchParams.get('story_fbid') || u.searchParams.get('fbid');
-        const pageId = u.searchParams.get('id');
-
-        if (/permalink\.php|story\.php|photo\.php/i.test(path)) {
-          if (!story) return '';
-          const idPart = pageId ? `&id=${pageId}` : '';
-          const key = path.includes('photo') ? 'fbid' : 'story_fbid';
-          return `${u.origin}${path}?${key}=${story}${idPart}`;
-        }
-
-        if (/\/groups\/[^/]+\/permalink\/\d+/i.test(path)) {
-          return `${u.origin}${path}`;
-        }
-        if (/\/posts\/pfbid/i.test(path) || /\/posts\/\d+/i.test(path)) {
-          return `${u.origin}${path}`;
-        }
-        if (/\/(videos|photos|watch)\//i.test(path)) {
-          return `${u.origin}${path}`;
-        }
-
-        return `${u.origin}${path}`.split('#')[0];
-      } catch {
-        return href.split('#')[0].split('&__cft__')[0];
+      const story = raw.match(/[?&]story_fbid=([^&"'\\]+)/i)?.[1]
+        || raw.match(/[?&]fbid=([^&"'\\]+)/i)?.[1];
+      const pageId = raw.match(/[?&]id=([^&"'\\]+)/i)?.[1];
+      if (story) {
+        const idPart = pageId ? `&id=${pageId}` : '';
+        if (/photo\.php/i.test(raw)) return `https://www.facebook.com/photo.php?fbid=${story}${idPart}`;
+        if (/story\.php/i.test(raw)) return `https://www.facebook.com/story.php?story_fbid=${story}${idPart}`;
+        return `https://www.facebook.com/permalink.php?story_fbid=${story}${idPart}`;
       }
-    };
 
-    const isPostHref = (href) => {
-      if (!href || /hashtag|\/search\//i.test(href)) return false;
-      if (isReelHref(href)) return false;
-      return (
-        /\/posts\//.test(href)
-        || /permalink\.php/.test(href)
-        || /\/permalink\//.test(href)
-        || /story\.php/.test(href)
-        || /photo\.php/.test(href)
-        || /\/videos\//.test(href)
-        || /\/photos\//.test(href)
-        || /\/watch\//.test(href)
-      );
-    };
+      const pathMatch = raw.match(/facebook\.com(\/[^?#"\\]+)/i);
+      if (!pathMatch) return '';
+      const path = pathMatch[1].replace(/\/+$/, '');
+      if (/\/search\/posts/i.test(path) || /^\/hashtag\//i.test(path)) return '';
+      if (/\/(reel|reels)\b/i.test(path)) return '';
 
-    const isReelRow = (row) => {
-      if (!row) return true;
-      return isReelHref(row.url || '');
-    };
-
-    const pickPostUrl = (root) => {
-      const anchors = [...root.querySelectorAll('a[href]')].filter((a) => isPostHref(a.href));
-      let best = '';
-      let bestScore = -1;
-      for (const a of anchors) {
-        const href = canonicalPostUrl(a.href);
-        if (!href) continue;
-        let score = 0;
-        if (/pfbid/i.test(href)) score += 12;
-        if (/\/posts\//.test(href)) score += 8;
-        if (/story_fbid=/i.test(href)) score += 10;
-        if (href.length > 45) score += 2;
-        if (score > bestScore) {
-          bestScore = score;
-          best = href;
-        }
+      if (
+        /\/posts\/pfbid/i.test(path)
+        || /\/posts\/\d+/i.test(path)
+        || /\/groups\/[^/]+\/permalink\/\d+/i.test(path)
+        || /\/(videos|photos|watch)\//i.test(path)
+        || /permalink\.php|story\.php|photo\.php/i.test(path)
+      ) {
+        return `https://www.facebook.com${path}`;
       }
-      return best;
+      return '';
     };
 
-    const leaveCommentButtons = () => [...document.querySelectorAll('[aria-label="Leave a comment"][role="button"]')]
-      .filter((el) => !el.closest('a[href]'));
-
-    const minimalCardForButton = (btn) => {
-      let card = btn.parentElement;
-      let best = null;
-      for (let depth = 0; depth < 30 && card && card !== document.body; depth += 1) {
-        const inCard = leaveCommentButtons().filter((el) => card.contains(el));
-        if (inCard.length > 1) break;
-        const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
-        const url = pickPostUrl(card);
-        if (inCard.length === 1 && url && text.length >= 20 && text.length <= 8000) {
-          best = card;
+    const textNearToken = (token) => {
+      if (!token) return '';
+      const link = document.querySelector(`a[href*="${token}"]`);
+      if (!link) return '';
+      let card = link.parentElement;
+      let text = (link.innerText || '').replace(/\s+/g, ' ').trim();
+      for (let depth = 0; depth < 14 && card && card !== document.body; depth += 1) {
+        const chunk = (card.innerText || '').replace(/\s+/g, ' ').trim();
+        if (chunk.length >= 20 && chunk.length <= 5000) {
+          text = chunk;
+          break;
         }
         card = card.parentElement;
       }
-      return best;
+      return text;
     };
 
-    const cardToRow = (root) => {
-      const text = (root.innerText || '').replace(/\s+/g, ' ').trim();
-      const commentMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+comments?/i);
-      const likeMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+(?:likes?|reactions?|others)/i);
-      const url = pickPostUrl(root);
+    const makeRow = (url, text) => {
+      const body = (text || '').replace(/\s+/g, ' ').trim();
+      const commentMatch = body.match(/(\d+(?:\.\d+)?[kKmM]?)\s+comments?/i);
+      const likeMatch = body.match(/(\d+(?:\.\d+)?[kKmM]?)\s+(?:likes?|reactions?|others)/i);
+      const title = body.slice(0, 120) || `Facebook post ${identityKey(url).slice(0, 24)}`;
       return {
-        title: text.slice(0, 120),
+        title,
         url,
-        snippet: text.slice(0, 240),
+        snippet: body.slice(0, 240) || title,
         upvotes: likeMatch ? likeMatch[1] : '0',
         answers: commentMatch ? commentMatch[1] : '0',
       };
     };
 
     const found = [];
-    const seenUrls = new Set();
-    const seenFallback = new Set();
+    const seen = new Set();
 
-    const pushRow = (row) => {
-      if (!row) return;
-      if (isReelRow(row)) return;
-      if (/sponsored|paid partnership/i.test((row.title || '').slice(0, 80))) return;
-      if (row.url) {
-        if (seenUrls.has(row.url)) return;
-        seenUrls.add(row.url);
-      } else {
-        const fb = row.title.slice(0, 100);
-        if (seenFallback.has(fb)) return;
-        seenFallback.add(fb);
-      }
-      found.push(row);
+    const pushUrl = (href, textHint) => {
+      const url = canonicalPostUrl(href);
+      if (!url || isReelHref(url)) return;
+      const key = identityKey(url);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      const token = key.startsWith('story:') ? key.slice(6) : key.replace(/^gperm:/, '');
+      const text = textHint || textNearToken(token) || textNearToken(url.match(/pfbid[A-Za-z0-9_-]+/i)?.[0] || '');
+      found.push(makeRow(url, text));
     };
 
-    const rowFromLink = (link) => {
-      if (isReelHref(link.href || '')) return null;
-      const url = canonicalPostUrl(link.href);
-      if (!url) return null;
+    const html = document.documentElement.innerHTML;
 
-      let card = link.parentElement;
-      let text = (link.innerText || '').replace(/\s+/g, ' ').trim();
-      for (let depth = 0; depth < 14 && card && card !== document.body; depth += 1) {
-        const chunk = (card.innerText || '').replace(/\s+/g, ' ').trim();
-        if (chunk.length >= 35 && chunk.length <= 5000) {
-          text = chunk;
-          break;
-        }
-        card = card.parentElement;
-      }
-      if (text.length < 15) return null;
-
-      const commentMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+comments?/i);
-      const likeMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+(?:likes?|reactions?|others)/i);
-      return {
-        title: text.slice(0, 120),
-        url,
-        snippet: text.slice(0, 240),
-        upvotes: likeMatch ? likeMatch[1] : '0',
-        answers: commentMatch ? commentMatch[1] : '0',
-      };
-    };
-
-    // 1) Search / feed: every unique canonical post link (fixes permalink.php dedupe)
-    for (const link of document.querySelectorAll('a[href]')) {
-      const raw = link.href || '';
-      if (!isPostHref(raw) && !/\/posts\/pfbid/i.test(raw) && !/story_fbid=/i.test(raw)) continue;
-      pushRow(rowFromLink(link));
-      if (found.length >= limit) return found;
-    }
-
-    // 2) One row per "Leave a comment" (smallest card that contains only that button)
-    for (const btn of leaveCommentButtons()) {
-      const card = minimalCardForButton(btn);
-      if (!card) continue;
-      pushRow(cardToRow(card));
-      if (found.length >= limit) return found;
-    }
-
-    // 3) Feed children — one row per direct feed child with a comment action
-    const feed = document.querySelector('div[role="feed"]');
-    if (feed) {
-      for (const child of feed.children) {
-        if (!child.querySelector('[aria-label="Leave a comment"]')) continue;
-        const row = cardToRow(child);
-        if (row.url || row.title.length >= 25) pushRow(row);
+    const postPathPatterns = [
+      /facebook\.com\/[A-Za-z0-9._-]+\/posts\/(pfbid[A-Za-z0-9_-]+)/gi,
+      /facebook\\.com\\/[A-Za-z0-9._-]+\\\/posts\\/(pfbid[A-Za-z0-9_-]+)/gi,
+    ];
+    for (const pattern of postPathPatterns) {
+      for (const m of html.matchAll(pattern)) {
+        const segment = m[0].replace(/\\/g, '').split('facebook.com/')[1];
+        pushUrl(`https://www.facebook.com/${segment}`);
         if (found.length >= limit) return found;
       }
+    }
+
+    for (const m of html.matchAll(/story_fbid=(pfbid[A-Za-z0-9_-]+|\d{8,})/gi)) {
+      const ctx = html.slice(m.index, m.index + 220);
+      const pageId = ctx.match(/[?&]id=(\d{5,})/i)?.[1];
+      const idPart = pageId ? `&id=${pageId}` : '';
+      pushUrl(`https://www.facebook.com/permalink.php?story_fbid=${m[1]}${idPart}`);
+      if (found.length >= limit) return found;
+    }
+
+    for (const m of html.matchAll(/facebook\.com\/groups\/[A-Za-z0-9._-]+\/permalink\/(\d+)/gi)) {
+      pushUrl(`https://www.facebook.com/${m[0].split('facebook.com/')[1]}`);
+      if (found.length >= limit) return found;
+    }
+
+    for (const link of document.querySelectorAll('a[href]')) {
+      const raw = link.href || '';
+      if (isReelHref(raw)) continue;
+      if (!/posts\/|permalink|story_fbid|story\.php|photo\.php|groups\/.*permalink/i.test(raw)) continue;
+      const text = (link.innerText || link.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+      pushUrl(raw, text);
+      if (found.length >= limit) return found;
+    }
+
+    for (const btn of document.querySelectorAll('[aria-label="Leave a comment"][role="button"]')) {
+      if (btn.closest('a[href]')) continue;
+      let card = btn.parentElement;
+      for (let depth = 0; depth < 28 && card && card !== document.body; depth += 1) {
+        const links = [...card.querySelectorAll('a[href]')];
+        for (const a of links) {
+          if (isReelHref(a.href)) continue;
+          if (!/posts\/|permalink|story_fbid/i.test(a.href || '')) continue;
+          const url = canonicalPostUrl(a.href);
+          if (!url) continue;
+          const key = identityKey(url);
+          if (seen.has(key)) break;
+          const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
+          seen.add(key);
+          found.push(makeRow(url, text));
+          break;
+        }
+        if (found.length && identityKey(found[found.length - 1].url) break;
+        card = card.parentElement;
+      }
+      if (found.length >= limit) return found;
     }
 
     return found;
@@ -344,38 +300,35 @@ async function extractPostsFromDom(page) {
 }
 
 async function extract(page) {
-  const byUrl = new Map();
-  const byTitle = new Map();
+  const byIdentity = new Map();
 
   for (let attempt = 0; attempt < EXTRACT_SCROLL_ATTEMPTS; attempt += 1) {
     const batch = await extractPostsFromDom(page);
     for (const row of batch) {
       if (isReelTarget(row.url)) continue;
-      if (row.url) {
-        if (!byUrl.has(row.url)) byUrl.set(row.url, row);
-      } else if (row.title) {
-        const key = row.title.slice(0, 100);
-        if (!byTitle.has(key)) byTitle.set(key, row);
-      }
+      const key = postIdentityKey(row.url) || row.title?.slice(0, 100);
+      if (!key || byIdentity.has(key)) continue;
+      byIdentity.set(key, row);
     }
 
-    const total = byUrl.size + byTitle.size;
-    console.log(`[facebook] extract attempt ${attempt + 1}: ${batch.length} on page, ${byUrl.size} with url, ${total} total unique`);
-    if (byUrl.size >= EXTRACT_POST_LIMIT) break;
+    console.log(`[facebook] extract attempt ${attempt + 1}: ${batch.length} on page, ${byIdentity.size} unique posts`);
+    if (byIdentity.size >= EXTRACT_POST_LIMIT) break;
 
     await page.mouse.wheel(0, 900).catch(() => {});
     await page.waitForTimeout(1800);
   }
 
-  const rows = [...byUrl.values(), ...byTitle.values()].slice(0, EXTRACT_POST_LIMIT);
+  const rows = [...byIdentity.values()]
+    .filter((row) => row.url && !isReelTarget(row.url))
+    .slice(0, EXTRACT_POST_LIMIT);
+
   if (rows.length === 0) {
     console.log('[facebook] extract found no posts');
     return [];
   }
 
-  const withUrl = rows.filter((row) => row.url);
-  console.log(`[facebook] extract returning ${withUrl.length || rows.length} posts (${withUrl.length} with permalink)`);
-  return withUrl.length ? withUrl : rows;
+  console.log(`[facebook] extract returning ${rows.length} posts`);
+  return rows;
 }
 
 function isSinglePostView(url) {
@@ -904,6 +857,7 @@ module.exports = {
   homeUrl: `${HOME}/`,
   searchText,
   rank,
+  postIdentityKey,
   isLoggedIn,
   openSearch,
   extract,
