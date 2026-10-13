@@ -85,15 +85,74 @@ async function isLoggedIn(page) {
   return url.startsWith(HOME);
 }
 
+function buildRandomSearchUrl(cleanQuery, options = {}) {
+  // If user provided explicit options, honor them
+  if (options && (options.time || options.sortOrder)) {
+    const params = new URLSearchParams({ q: cleanQuery, type: 'question' });
+    if (options.sortOrder) params.set('sortOrder', options.sortOrder);
+    if (options.time) params.set('time', options.time);
+    return {
+      url: `${HOME}/search?${params.toString()}`,
+      strategy: { sortOrder: options.sortOrder || null, time: options.time || null, label: 'explicit filter' },
+    };
+  }
+
+  // Randomized natural browsing strategies:
+  // Sometimes filter by time, sometimes by most recent, and sometimes no filters at all
+  const strategies = [
+    { sortOrder: 'time_descending', time: 'day', label: 'past day, newest first' },
+    { sortOrder: 'time_descending', time: 'week', label: 'past week, newest first' },
+    { sortOrder: 'time_descending', time: 'month', label: 'past month, newest first' },
+    { sortOrder: 'time_descending', time: null, label: 'all-time, newest first' },
+    { sortOrder: null, time: 'day', label: 'past day, top relevant' },
+    { sortOrder: null, time: 'week', label: 'past week, top relevant' },
+    { sortOrder: null, time: 'month', label: 'past month, top relevant' },
+    { sortOrder: null, time: null, label: 'all-time, default relevance (no filters)' },
+  ];
+
+  const picked = strategies[Math.floor(Math.random() * strategies.length)];
+  const params = new URLSearchParams({ q: cleanQuery, type: 'question' });
+  if (picked.sortOrder) params.set('sortOrder', picked.sortOrder);
+  if (picked.time) params.set('time', picked.time);
+
+  console.log(`[quora] Randomized search filter selected: "${picked.label}" (${params.toString()})`);
+  return {
+    url: `${HOME}/search?${params.toString()}`,
+    strategy: picked,
+  };
+}
+
 async function openSearch(page, query) {
-  await page.goto(`${HOME}/search?q=${encodeURIComponent(query)}&type=question`, {
-    waitUntil: 'domcontentloaded',
-    timeout: 45000,
-  });
+  const cleanQuery = typeof query === 'string' ? query : query?.text || '';
+  const queryOptions = typeof query === 'object' && query !== null ? query : {};
+  const { url, strategy } = buildRandomSearchUrl(cleanQuery, queryOptions);
+
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 45000,
+    });
+  } catch (err) {
+    console.warn(`[quora] Direct filtered search failed (${err?.message || err}), falling back...`);
+    await page.goto(`${HOME}/search?q=${encodeURIComponent(cleanQuery)}&type=question`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 45000,
+    });
+  }
+
   // Wait for Quora React app to render search items
   await page.waitForTimeout(3000);
   await page.mouse.wheel(0, 500).catch(() => {});
   await page.waitForTimeout(1500);
+
+  // If strict randomized filter yields <= 3 results on a niche query, automatically widen to standard questions
+  const hasResults = await page.locator('a[href*="/"]').count().catch(() => 0);
+  if (hasResults <= 3 && (strategy?.time || strategy?.sortOrder)) {
+    console.log(`[quora] Few results found with "${strategy.label}" for "${cleanQuery}". Widening to standard search...`);
+    const fallbackUrl = `${HOME}/search?q=${encodeURIComponent(cleanQuery)}&type=question`;
+    await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 35000 }).catch(() => {});
+    await page.waitForTimeout(2500);
+  }
 }
 
 async function extract(page) {

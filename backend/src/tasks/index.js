@@ -3,19 +3,19 @@ const all = [
     id: 'quora-marketing',
     name: 'Quora Marketing',
     platform: 'quora',
-    description: 'Search recent Quora questions, choose the best one, and post one useful answer.',
+    description: 'Search Quora questions (with randomized recency & relevance filters), choose the best one, and post one useful answer.',
   },
   {
     id: 'quora-comment',
     name: 'Quora Comment on Top Post',
     platform: 'quora-comment',
-    description: 'Search recent Quora questions, select the top discussion, and post an insightful comment on the top post.',
+    description: 'Search Quora questions (with randomized recency & relevance filters), select the top discussion, and post an insightful comment on the top post.',
   },
   {
     id: 'quora-end',
     name: 'Quora Answer at End',
     platform: 'quora-end',
-    description: 'Search recent Quora questions, select the top discussion, and post an answer or reply at the end of the thread.',
+    description: 'Search Quora questions (with randomized recency & relevance filters), select the top discussion, and post an answer or reply at the end of the thread.',
   },
   {
     id: 'twitter-marketing',
