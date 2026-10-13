@@ -119,8 +119,7 @@ async function extractPostsFromDom(page) {
   return page.evaluate((limit) => {
     const cleanUrl = (href) => {
       if (!href) return '';
-      const stripped = href.split('?')[0].split('&__cft__')[0].split('?__cft__')[0];
-      return stripped;
+      return href.split('?')[0].split('#')[0].split('&__cft__')[0].split('?__cft__')[0];
     };
 
     const isPostHref = (href) => {
@@ -137,98 +136,116 @@ async function extractPostsFromDom(page) {
     };
 
     const pickPostUrl = (root) => {
-      const anchors = [...root.querySelectorAll('a[href]')];
+      const anchors = [...root.querySelectorAll('a[href]')].filter((a) => isPostHref(a.href));
+      let best = '';
+      let bestScore = -1;
       for (const a of anchors) {
-        const href = a.href || '';
-        if (isPostHref(href)) return cleanUrl(href);
+        const href = cleanUrl(a.href);
+        let score = 0;
+        if (/pfbid/i.test(href)) score += 12;
+        if (/\/posts\//.test(href)) score += 8;
+        if (/\/videos\//.test(href) || /\/photos\//.test(href)) score += 6;
+        if (href.length > 45) score += 2;
+        if (score > bestScore) {
+          bestScore = score;
+          best = href;
+        }
       }
-      return '';
+      return best;
     };
 
-    const cardMeta = (root) => {
+    const leaveCommentButtons = () => [...document.querySelectorAll('[aria-label="Leave a comment"][role="button"]')]
+      .filter((el) => !el.closest('a[href]'));
+
+    const minimalCardForButton = (btn) => {
+      let card = btn.parentElement;
+      let best = null;
+      for (let depth = 0; depth < 30 && card && card !== document.body; depth += 1) {
+        const inCard = leaveCommentButtons().filter((el) => card.contains(el));
+        if (inCard.length > 1) break;
+        const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
+        const url = pickPostUrl(card);
+        if (inCard.length === 1 && url && text.length >= 20 && text.length <= 8000) {
+          best = card;
+        }
+        card = card.parentElement;
+      }
+      return best;
+    };
+
+    const cardToRow = (root) => {
       const text = (root.innerText || '').replace(/\s+/g, ' ').trim();
       const commentMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+comments?/i);
       const likeMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+(?:likes?|reactions?|others)/i);
-      return {
-        text,
-        commentMatch,
-        likeMatch,
-        hasCommentBtn: !!root.querySelector('[aria-label="Leave a comment"][role="button"]'),
-      };
-    };
-
-    const pushCard = (found, seen, root) => {
-      if (!root || root === document.body) return;
-      const { text, commentMatch, likeMatch, hasCommentBtn } = cardMeta(root);
-      if (text.length < 20) return;
-      if (/sponsored|paid partnership/i.test(text.slice(0, 80))) return;
-
       const url = pickPostUrl(root);
-      const dedupeKey = url || text.slice(0, 100);
-      if (seen.has(dedupeKey)) return;
-      if (!url && !hasCommentBtn) return;
-
-      seen.add(dedupeKey);
-      found.push({
+      return {
         title: text.slice(0, 120),
-        url: url || '',
+        url,
         snippet: text.slice(0, 240),
         upvotes: likeMatch ? likeMatch[1] : '0',
         answers: commentMatch ? commentMatch[1] : '0',
-      });
+      };
     };
 
     const found = [];
-    const seen = new Set();
-    const roots = [];
+    const seenUrls = new Set();
+    const seenFallback = new Set();
 
-    // One card per visible "Leave a comment" (matches manual console flow)
-    const commentButtons = [...document.querySelectorAll('[aria-label="Leave a comment"][role="button"]')];
-    for (const btn of commentButtons) {
-      let card = btn;
-      for (let depth = 0; depth < 18 && card; depth += 1) {
-        card = card.parentElement;
-        if (!card || card === document.body) break;
-        const url = pickPostUrl(card);
-        const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
-        if (url && text.length >= 25) {
-          roots.push(card);
-          break;
-        }
+    const pushRow = (row) => {
+      if (!row) return;
+      if (/sponsored|paid partnership/i.test((row.title || '').slice(0, 80))) return;
+      if (row.url) {
+        if (seenUrls.has(row.url)) return;
+        seenUrls.add(row.url);
+      } else {
+        const fb = row.title.slice(0, 100);
+        if (seenFallback.has(fb)) return;
+        seenFallback.add(fb);
       }
-    }
+      found.push(row);
+    };
 
-    const feed = document.querySelector('div[role="feed"]');
-    if (feed) {
-      for (const child of feed.children) {
-        if (child.querySelector('[aria-label="Leave a comment"]')) roots.push(child);
-      }
-    }
-
-    for (const art of document.querySelectorAll('div[role="article"]')) {
-      roots.push(art);
-    }
-
-    for (const root of roots) {
-      pushCard(found, seen, root);
+    // 1) One row per "Leave a comment" (smallest card that contains only that button)
+    for (const btn of leaveCommentButtons()) {
+      const card = minimalCardForButton(btn);
+      if (!card) continue;
+      pushRow(cardToRow(card));
       if (found.length >= limit) return found;
     }
 
-    // Search results: walk up from each post link to a compact card
-    const links = [...document.querySelectorAll('a[href]')];
-    for (const link of links) {
+    // 2) Feed children (search / home) — one row per direct feed child with a comment action
+    const feed = document.querySelector('div[role="feed"]');
+    if (feed) {
+      for (const child of feed.children) {
+        if (!child.querySelector('[aria-label="Leave a comment"]')) continue;
+        const row = cardToRow(child);
+        if (row.url || row.title.length >= 25) pushRow(row);
+        if (found.length >= limit) return found;
+      }
+    }
+
+    // 3) Every unique post permalink on the page → compact card
+    const linkCards = new Map();
+    for (const link of document.querySelectorAll('a[href]')) {
       const href = link.href || '';
       if (!isPostHref(href)) continue;
+      const url = cleanUrl(href);
+      if (linkCards.has(url)) continue;
+
       let card = link.parentElement;
-      for (let depth = 0; depth < 12 && card && card !== document.body; depth += 1) {
+      for (let depth = 0; depth < 14 && card && card !== document.body; depth += 1) {
         const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
-        if (text.length >= 40 && text.length <= 4000) {
-          pushCard(found, seen, card);
+        if (text.length >= 35 && text.length <= 5000) {
+          linkCards.set(url, card);
           break;
         }
         card = card.parentElement;
       }
-      if (found.length >= limit) break;
+    }
+
+    for (const [, card] of linkCards) {
+      pushRow(cardToRow(card));
+      if (found.length >= limit) return found;
     }
 
     return found;
@@ -237,23 +254,28 @@ async function extractPostsFromDom(page) {
 
 async function extract(page) {
   const byUrl = new Map();
+  const byTitle = new Map();
 
   for (let attempt = 0; attempt < EXTRACT_SCROLL_ATTEMPTS; attempt += 1) {
     const batch = await extractPostsFromDom(page);
     for (const row of batch) {
-      const key = row.url || row.title;
-      if (!key || byUrl.has(key)) continue;
-      byUrl.set(key, row);
+      if (row.url) {
+        if (!byUrl.has(row.url)) byUrl.set(row.url, row);
+      } else if (row.title) {
+        const key = row.title.slice(0, 100);
+        if (!byTitle.has(key)) byTitle.set(key, row);
+      }
     }
 
-    console.log(`[facebook] extract attempt ${attempt + 1}: ${batch.length} on page, ${byUrl.size} total unique`);
+    const total = byUrl.size + byTitle.size;
+    console.log(`[facebook] extract attempt ${attempt + 1}: ${batch.length} on page, ${byUrl.size} with url, ${total} total unique`);
     if (byUrl.size >= EXTRACT_POST_LIMIT) break;
 
     await page.mouse.wheel(0, 900).catch(() => {});
     await page.waitForTimeout(1800);
   }
 
-  const rows = [...byUrl.values()].slice(0, EXTRACT_POST_LIMIT);
+  const rows = [...byUrl.values(), ...byTitle.values()].slice(0, EXTRACT_POST_LIMIT);
   if (rows.length === 0) {
     console.log('[facebook] extract found no posts');
     return [];
