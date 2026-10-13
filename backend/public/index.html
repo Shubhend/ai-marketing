@@ -337,6 +337,7 @@
 
     .badge-ready { background: #064e3b; color: #34d399; }
     .badge-running { background: #1e3a8a; color: #60a5fa; }
+    .badge-queued { background: #312e81; color: #c7d2fe; }
     .badge-completed { background: #065f46; color: #34d399; }
     .badge-failed { background: #7f1d1d; color: #f87171; }
     .badge-creating { background: #451a03; color: #fbbf24; }
@@ -605,6 +606,9 @@
     .log-run-card.running {
       border-left: 4px solid var(--primary);
     }
+    .log-run-card.queued {
+      border-left: 4px solid #6366f1;
+    }
     .proof-thumb {
       max-height: 140px;
       max-width: 240px;
@@ -829,6 +833,7 @@
           <div style="display:flex; gap:0.5rem;">
             <select id="execFilter" onchange="loadExecutions()" style="width:auto; padding:0.3rem 0.6rem; font-size:0.8rem;">
               <option value="">All Statuses</option>
+              <option value="QUEUED">QUEUED only</option>
               <option value="RUNNING">RUNNING only</option>
               <option value="COMPLETED">COMPLETED only</option>
               <option value="FAILED">FAILED only</option>
@@ -885,6 +890,7 @@
             <button class="btn btn-secondary" onclick="testApi('/api/tasks/available')">GET /api/tasks/available</button>
             <button class="btn btn-secondary" onclick="testApi('/api/sessions')">GET /api/sessions</button>
             <button class="btn btn-secondary" onclick="testApi('/api/tasks')">GET /api/tasks</button>
+            <button class="btn btn-secondary" onclick="testApi('/api/queue')">GET /api/queue</button>
             <button class="btn btn-secondary" onclick="testApi('/api/executions')">GET /api/executions</button>
             <button class="btn btn-secondary" onclick="testApi('/api/executions?status=FAILED')">GET /api/executions?status=FAILED</button>
             <button class="btn btn-secondary" onclick="testApi('/api/publications')">GET /api/publications</button>
@@ -1215,6 +1221,8 @@
             statusBadge = `<span class="badge badge-failed" title="${reason}">FAILED</span>`;
           } else if (t.lastStatus === 'RUNNING') {
             statusBadge = `<span class="badge badge-running">RUNNING</span>`;
+          } else if (t.lastStatus === 'QUEUED') {
+            statusBadge = `<span class="badge badge-queued" title="Job waiting in queue to be executed">QUEUED</span>`;
           }
 
           return `
@@ -1366,13 +1374,15 @@
         const totalRuns = runs.length;
         const successRuns = runs.filter(r => r.status === 'COMPLETED').length;
         const failedRuns = runs.filter(r => r.status === 'FAILED').length;
+        const queuedRuns = runs.filter(r => r.status === 'QUEUED').length;
+        const runningRuns = runs.filter(r => r.status === 'RUNNING').length;
 
         let summaryHtml = `
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; background:#0b1120; border:1px solid #1e293b; padding:0.9rem; border-radius:10px; margin-bottom:1.25rem;">
             <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">CAMPAIGN</span><strong>${taskName}</strong></div>
             <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">ACTION TYPE</span><code>${escapeHtml(tRes.task)}</code></div>
             <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">SESSION</span><code>${escapeHtml(tRes.sessionId)}</code></div>
-            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">TOTAL RUNS</span><strong>${totalRuns} (${successRuns} Success, ${failedRuns} Failed)</strong></div>
+            <div><span style="font-size:0.75rem; color:var(--text-muted); display:block;">TOTAL RUNS</span><strong>${totalRuns} (${successRuns} Success, ${failedRuns} Failed${queuedRuns ? `, ${queuedRuns} Queued` : ''}${runningRuns ? `, ${runningRuns} Running` : ''})</strong></div>
           </div>
         `;
 
@@ -1384,7 +1394,8 @@
         let listHtml = runs.map((ex, idx) => {
           const isOk = ex.status === 'COMPLETED';
           const isFailed = ex.status === 'FAILED';
-          const cardClass = isOk ? 'ok' : (isFailed ? 'failed' : 'running');
+          const isQueued = ex.status === 'QUEUED';
+          const cardClass = isOk ? 'ok' : (isFailed ? 'failed' : (isQueued ? 'queued' : 'running'));
           const statusBadge = `<span class="badge badge-${(ex.status || '').toLowerCase()}">${isOk ? 'SUCCESS' : ex.status}</span>`;
           const time = ex.createdAt ? new Date(ex.createdAt).toLocaleString() : '';
 

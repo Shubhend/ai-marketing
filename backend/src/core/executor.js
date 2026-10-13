@@ -7,6 +7,7 @@ const platforms = require('../platforms');
 const catalog = require('../tasks');
 const browser = require('./browser');
 const ai = require('./ai');
+const queue = require('./queue');
 
 function emptyUsage() {
   return { callCount: 0, promptTokens: 0, completionTokens: 0, calls: [] };
@@ -246,31 +247,42 @@ async function noteFailure(task, error) {
   });
 }
 
-async function start(task) {
-  const { systemTask, session } = await resolve(task.sessionId, task.task);
-  await browser.reserve(session.sessionId);
+async function runExecution(execution) {
   try {
-    task.lastRunAt = new Date();
-    if (task.everyHours) task.nextRunAt = new Date(Date.now() + task.everyHours * 60 * 60 * 1000);
-    await task.save();
-    const execution = await Execution.create({
-      executionId: crypto.randomUUID(),
-      status: 'RUNNING',
-      taskId: task.id,
-      taskName: task.name || '',
-      sessionId: session.sessionId,
-      systemTask: systemTask.id,
-      platform: systemTask.platform,
-      prompt: task.prompt,
-      content: task.prompt,
-      ai: emptyUsage(),
-    });
-    execute(execution).catch((error) => console.error(config.safeMessage(error)));
-    return execution;
+    console.log(`[executor] Reserving session "${execution.sessionId}" for execution "${execution.executionId}"...`);
+    await browser.reserve(execution.sessionId);
+    await execute(execution);
   } catch (error) {
+    if (execution.status !== 'FAILED') {
+      execution.status = 'FAILED';
+      execution.ai = execution.ai || copyUsage(emptyUsage());
+      execution.markModified('ai');
+      execution.failure = {
+        stage: error.stage || 'session',
+        pageUrl: error.pageUrl || '',
+        reason: config.safeMessage(error),
+        at: new Date(),
+      };
+      await execution.save().catch(() => {});
+    }
+    console.error(`[executor] Execution "${execution.executionId}" failed:`, config.safeMessage(error));
+  } finally {
     browser.release();
-    throw error;
+    console.log(`[executor] Released session lock for execution "${execution.executionId}".`);
   }
 }
 
-module.exports = { start, noteFailure, resolve };
+// Connect sequential worker to executor
+queue.registerRunner(runExecution);
+
+async function start(task) {
+  return queue.enqueue(task, resolve);
+}
+
+module.exports = {
+  start,
+  enqueue: start,
+  noteFailure,
+  resolve,
+  runExecution,
+};

@@ -1,6 +1,7 @@
 const config = require('../config');
 const { Task } = require('../models');
 const executor = require('./executor');
+const queue = require('./queue');
 
 const timers = new Map();
 
@@ -14,6 +15,10 @@ async function fire(id) {
   const task = await Task.findOne({ id, enabled: true });
   if (!task) return stop(id);
   try {
+    if (queue.isTaskPending(task.id)) {
+      console.log(`[scheduler] Task "${task.name || task.id}" is already in queue or running, skipping duplicate interval fire.`);
+      return;
+    }
     await executor.start(task);
   } catch (error) {
     await executor.noteFailure(task, error);

@@ -5,6 +5,7 @@ const platforms = require('./platforms');
 const catalog = require('./tasks');
 const browser = require('./core/browser');
 const executor = require('./core/executor');
+const queue = require('./core/queue');
 const scheduler = require('./core/scheduler');
 const { Execution, PublishedContent, Session, Task } = require('./models');
 
@@ -248,7 +249,7 @@ router.post('/tasks', wrap(async (req, res) => {
 
   try {
     const execution = await executor.start(saved);
-    res.status(202).json({ ...present(saved), executionId: execution.executionId });
+    res.status(202).json({ ...present(saved), executionId: execution.executionId, status: execution.status });
   } catch (error) {
     res.status(error.status || 500).json({
       ...present(saved),
@@ -268,7 +269,7 @@ router.post('/tasks/:id/run', wrap(async (req, res) => {
   const row = await Task.findOne({ id: req.params.id });
   if (!row) return res.status(404).json({ error: 'Task not found' });
   const execution = await executor.start(row);
-  res.status(202).json({ executionId: execution.executionId });
+  res.status(202).json({ executionId: execution.executionId, status: execution.status });
 }));
 
 router.put('/tasks/:id', wrap(async (req, res) => {
@@ -322,6 +323,10 @@ router.get('/executions/:id', wrap(async (req, res) => {
   const row = await Execution.findOne({ executionId: req.params.id });
   if (!row) return res.status(404).json({ error: 'Execution not found' });
   res.json(present(row));
+}));
+
+router.get('/queue', wrap(async (req, res) => {
+  res.json(queue.getStatus());
 }));
 
 router.get('/publications', wrap(async (req, res) => {

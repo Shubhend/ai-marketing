@@ -204,6 +204,14 @@ function release() {
   activeSessionId = null;
 }
 
+function getMode() {
+  return mode;
+}
+
+function getActiveSessionId() {
+  return activeSessionId;
+}
+
 /**
  * Launch or connect to browser context.
  * If SERVER_BROWSER is defined, connects via CDP / WebSocket (Method 1).
@@ -403,4 +411,6 @@ module.exports = {
   runWith,
   setStatus,
   getRemoteServerUrl,
+  getMode,
+  getActiveSessionId,
 };
