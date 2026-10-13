@@ -261,12 +261,52 @@ async function extract(page) {
   return withUrl.length ? withUrl : rows;
 }
 
+function isSinglePostView(url) {
+  return /\/posts\/|permalink\.php|\/permalink\/|story\.php|\/photos\/|\/videos\/|\/watch\//i.test(url || '');
+}
+
+async function markTargetPostRoot(page, postUrl) {
+  await page.evaluate((targetUrl) => {
+    const normalize = (href) => (href || '').split('?')[0].split('#')[0];
+    const target = normalize(targetUrl);
+    const idMatch = target.match(/(posts\/pfbid[\w-]+|posts\/\d+|story_fbid=\d+|permalink\/\d+)/i);
+    const idNeedle = idMatch ? idMatch[0] : '';
+
+    let best = null;
+    for (const art of document.querySelectorAll('div[role="article"]')) {
+      for (const a of art.querySelectorAll('a[href]')) {
+        const href = normalize(a.href);
+        if ((idNeedle && href.includes(idNeedle)) || href === target || target.includes(href) && href.length > 30) {
+          best = art;
+          break;
+        }
+      }
+      if (best) break;
+    }
+
+    document.querySelectorAll('[data-fb-target-post]').forEach((el) => {
+      el.removeAttribute('data-fb-target-post');
+    });
+
+    const root = best
+      || document.querySelector('div[role="main"] div[role="article"]')
+      || document.querySelector('div[role="article"]')
+      || document.querySelector('div[role="main"]');
+    if (root) root.setAttribute('data-fb-target-post', '1');
+  }, postUrl).catch(() => {});
+}
+
 async function openQuestion(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.waitForTimeout(3000);
+  await markTargetPostRoot(page, url);
+  await page.waitForTimeout(500);
 
   const postData = await page.evaluate(() => {
-    const article = document.querySelector('div[role="article"]') || document.querySelector('div[role="main"]') || document.body;
+    const article = document.querySelector('[data-fb-target-post="1"]')
+      || document.querySelector('div[role="article"]')
+      || document.querySelector('div[role="main"]')
+      || document.body;
     const text = (article?.innerText || '').replace(/\s+/g, ' ').trim();
     return { text: text.slice(0, 1000) };
   }).catch(() => ({ text: '' }));
@@ -278,6 +318,7 @@ async function openQuestion(page, url) {
     title,
     body,
     isFacebook: true,
+    postUrl: url,
   };
 }
 
@@ -295,31 +336,100 @@ function postCommentButton(page) {
   return page.locator('#focused-state-composer-submit').getByRole('button', { name: 'Post comment' }).last();
 }
 
+function postCommentActionSelector() {
+  return 'div[aria-label="Leave a comment"][role="button"]:has([data-ad-rendering-role="comment_button"])';
+}
+
+async function isValidPostCommentButton(button) {
+  return button.evaluate((el) => {
+    if (el.getAttribute('aria-label') !== 'Leave a comment') return false;
+    if (el.getAttribute('role') !== 'button') return false;
+    if (!el.querySelector('[data-ad-rendering-role="comment_button"]')) return false;
+    if (el.closest('a[href]')) return false;
+
+    let walk = el.parentElement;
+    for (let depth = 0; depth < 8 && walk; depth += 1) {
+      const chunk = (walk.innerText || '').replace(/\s+/g, ' ');
+      if (/Like|Comment|Share/i.test(chunk) && chunk.length < 120) return true;
+      walk = walk.parentElement;
+    }
+    return true;
+  }).catch(() => false);
+}
+
+async function clickLeaveCommentButton(page, button) {
+  await button.scrollIntoViewIfNeeded().catch(() => {});
+  await fbPause(page, 350);
+
+  const box = await button.boundingBox().catch(() => null);
+  if (box && box.width > 4 && box.height > 4) {
+    const x = box.x + Math.min(box.width * 0.25, 28);
+    const y = box.y + box.height / 2;
+    console.log(`[facebook] Clicking comment action at (${Math.round(x)}, ${Math.round(y)})`);
+    await page.mouse.click(x, y);
+    return;
+  }
+
+  await button.click({ timeout: 8000 });
+}
+
+async function waitForCommentEditor(page) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const editor = await openedCommentEditor(page);
+    if (editor) return editor;
+    await fbPause(page, 400);
+  }
+  return null;
+}
+
+async function openCommentOnTargetPost(page) {
+  const root = page.locator('[data-fb-target-post="1"]').first();
+  if (!(await root.count().catch(() => 0))) return null;
+
+  const button = root.locator(postCommentActionSelector()).first();
+  if (!(await button.isVisible().catch(() => false))) {
+    console.log('[facebook] No comment action on marked target post.');
+    return null;
+  }
+  if (!(await isValidPostCommentButton(button))) {
+    console.log('[facebook] Target post comment button failed validation.');
+    return null;
+  }
+
+  console.log('[facebook] Clicking comment on marked target post only.');
+  await clickLeaveCommentButton(page, button);
+  await fbPause(page, 600);
+  const editor = await waitForCommentEditor(page);
+  if (editor) {
+    console.log('[facebook] Comment popup opened from target post.');
+    await fbPause(page);
+  }
+  return editor;
+}
+
 async function rankedCommentButtons(page) {
-  const feed = page.locator('div[role="feed"]').first();
-  const hasFeed = await feed.count().catch(() => 0);
-  const buttons = hasFeed
-    ? feed.getByRole('button', { name: 'Leave a comment' })
-    : page.getByRole('button', { name: 'Leave a comment' });
+  const scopedRoot = page.locator('[data-fb-target-post="1"]').first();
+  const useScoped = (await scopedRoot.count().catch(() => 0)) > 0;
+  const container = useScoped ? scopedRoot : page.locator('div[role="feed"]').first();
+  const hasContainer = await container.count().catch(() => 0);
+  const buttons = (hasContainer ? container : page).locator(postCommentActionSelector());
   const count = await buttons.count();
   const ranked = [];
 
   for (let index = 0; index < count; index += 1) {
     const button = buttons.nth(index);
     if (!(await button.isVisible().catch(() => false))) continue;
+    if (!(await isValidPostCommentButton(button))) continue;
+
     const meta = await button.evaluate((el) => {
       const rect = el.getBoundingClientRect();
-      const feedNode = el.closest('div[role="feed"]');
-      const article = el.closest('div[role="article"]');
+      const inTarget = !!el.closest('[data-fb-target-post="1"]');
       const countText = (el.innerText || '').replace(/\s+/g, ' ').trim();
-      const midpoint = (rect.top + rect.bottom) / 2;
       let score = 0;
-      if (feedNode) score += 40;
-      if (article && feedNode?.contains(article)) score += 20;
-      if (/\d/.test(countText)) score += 30;
-      if (el.querySelector('[data-ad-rendering-role="comment_button"]')) score += 20;
-      if (rect.top >= 0 && rect.bottom <= window.innerHeight) score += 15;
-      score -= Math.abs(midpoint - (window.innerHeight / 2)) / 40;
+      if (inTarget) score += 200;
+      if (/\d/.test(countText)) score += 20;
+      if (rect.top >= 0 && rect.top < window.innerHeight * 0.75) score += 25;
+      score -= rect.top / 100;
       return { score, top: Math.round(rect.top), countText: countText.slice(0, 24) };
     }).catch(() => null);
     if (!meta) continue;
@@ -359,35 +469,34 @@ async function openCommentEditor(page) {
   }
 
   await fbPause(page);
+
+  if (isSinglePostView(page.url()) || (await page.locator('[data-fb-target-post="1"]').count())) {
+    const fromTarget = await openCommentOnTargetPost(page);
+    if (fromTarget) return fromTarget;
+    if (isSinglePostView(page.url())) {
+      await markTargetPostRoot(page, page.url());
+      await fbPause(page, 400);
+      const retryTarget = await openCommentOnTargetPost(page);
+      if (retryTarget) return retryTarget;
+    }
+  }
+
   const ranked = await rankedCommentButtons(page);
-  if (!ranked.length) throw new Error('Facebook comment button was not found in the feed');
-  console.log(`[facebook] Found ${ranked.length} Leave a comment buttons in the feed.`);
+  if (!ranked.length) throw new Error('Facebook post comment action was not found');
+  console.log(`[facebook] Found ${ranked.length} valid comment actions.`);
 
   for (const target of ranked) {
-    console.log(`[facebook] Clicking comment button at y=${target.top} text="${target.countText}"`);
-    await target.button.scrollIntoViewIfNeeded().catch(() => {});
-    await fbPause(page, 350);
-
-    const icon = target.button.locator('[data-ad-rendering-role="comment_button"]').first();
-    if (await icon.count().catch(() => 0)) {
-      await icon.click({ force: true, timeout: 5000 }).catch(() => {});
-    } else {
-      await target.button.click({ timeout: 5000 }).catch(() => {});
-    }
+    console.log(`[facebook] Clicking comment action at y=${target.top} text="${target.countText}" score=${target.score}`);
+    await clickLeaveCommentButton(page, target.button);
     await fbPause(page, 600);
 
-    let editor = null;
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      editor = await openedCommentEditor(page);
-      if (editor) break;
-      await fbPause(page, 400);
-    }
+    const editor = await waitForCommentEditor(page);
     if (editor) {
       console.log('[facebook] Comment popup editor is visible.');
       await fbPause(page);
       return editor;
     }
-    console.log('[facebook] This feed button did not open the comment box.');
+    console.log('[facebook] This comment action did not open the comment box.');
   }
 
   throw new Error('Facebook comment popup did not open');
@@ -510,6 +619,7 @@ async function submitAnswer(page, comment) {
   if (!text) throw new Error('Facebook comment is empty');
 
   console.log('[facebook] Starting comment submission flow...');
+  await markTargetPostRoot(page, page.url());
   await fbPause(page, 300);
   const editor = await openCommentEditor(page);
   await fbPause(page);
