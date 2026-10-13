@@ -230,165 +230,179 @@ async function openQuestion(page, url) {
   };
 }
 
-async function submitAnswer(page, comment) {
-  console.log('[facebook] Starting comment submission flow...');
+function commentAsEditor(page) {
+  return page.getByRole('textbox', { name: /^Comment as\b/i }).last();
+}
 
-  // 1. Check if the Lexical comment editor is already open and visible
-  const directEditor = page.locator('div[data-lexical-editor="true"][role="textbox"], div[aria-label*="Comment as" i][contenteditable="true"]').first();
-  let isEditorReady = await directEditor.isVisible().catch(() => false);
+function postCommentButton(page) {
+  return page.locator('#focused-state-composer-submit').getByRole('button', { name: 'Post comment' }).last();
+}
 
-  // If editor is not already open, click the "Leave a comment" trigger button
-  if (!isEditorReady) {
-    console.log('[facebook] Comment editor not open. Looking for comment trigger button...');
+async function rankedCommentButtons(page) {
+  const feed = page.locator('div[role="feed"]').first();
+  const hasFeed = await feed.count().catch(() => 0);
+  const buttons = hasFeed
+    ? feed.getByRole('button', { name: 'Leave a comment' })
+    : page.getByRole('button', { name: 'Leave a comment' });
+  const count = await buttons.count();
+  const ranked = [];
 
-    // Prioritize the exact selectors from Facebook post actions
-    const commentTriggers = [
-      'div[aria-label="Leave a comment"][role="button"]',
-      'div[role="button"]:has([data-ad-rendering-role="comment_button"])',
-      '[data-ad-rendering-role="comment_button"]',
-      'div[aria-label*="Leave a comment" i]',
-      'div[role="button"][aria-label*="Comment" i]',
-      'div[role="button"]:has-text("Comment")',
-      'span:has-text("Comment")',
-    ];
+  for (let index = 0; index < count; index += 1) {
+    const button = buttons.nth(index);
+    if (!(await button.isVisible().catch(() => false))) continue;
+    const meta = await button.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      const feedNode = el.closest('div[role="feed"]');
+      const article = el.closest('div[role="article"]');
+      const countText = (el.innerText || '').replace(/\s+/g, ' ').trim();
+      const midpoint = (rect.top + rect.bottom) / 2;
+      let score = 0;
+      if (feedNode) score += 40;
+      if (article && feedNode?.contains(article)) score += 20;
+      if (/\d/.test(countText)) score += 30;
+      if (el.querySelector('[data-ad-rendering-role="comment_button"]')) score += 20;
+      if (rect.top >= 0 && rect.bottom <= window.innerHeight) score += 15;
+      score -= Math.abs(midpoint - (window.innerHeight / 2)) / 40;
+      return { score, top: Math.round(rect.top), countText: countText.slice(0, 24) };
+    }).catch(() => null);
+    if (!meta) continue;
+    ranked.push({ button, ...meta });
+  }
 
-    let clicked = false;
-    for (const sel of commentTriggers) {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible().catch(() => false)) {
-        console.log(`[facebook] Found comment button with selector: "${sel}". Clicking...`);
-        await btn.scrollIntoViewIfNeeded().catch(() => {});
-        await page.waitForTimeout(300);
-        await btn.click({ force: true }).catch(() => {});
-        clicked = true;
-        break;
-      }
+  ranked.sort((left, right) => right.score - left.score);
+  return ranked;
+}
+
+async function openedCommentEditor(page) {
+  const commentAs = commentAsEditor(page);
+  if (await commentAs.isVisible().catch(() => false)) return commentAs;
+
+  const dialogEditor = page.locator('div[role="dialog"] div[contenteditable="true"][data-lexical-editor="true"]').last();
+  if (await dialogEditor.isVisible().catch(() => false)) return dialogEditor;
+
+  const submitVisible = await page.locator('#focused-state-composer-submit').isVisible().catch(() => false);
+  if (submitVisible) {
+    const lexical = page.locator('div[contenteditable="true"][data-lexical-editor="true"]').last();
+    if (await lexical.isVisible().catch(() => false)) return lexical;
+  }
+  return null;
+}
+
+async function editorPlainText(editor) {
+  const raw = await editor.innerText().catch(() => '');
+  return String(raw).replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+}
+
+async function openCommentEditor(page) {
+  const alreadyOpen = await openedCommentEditor(page);
+  if (alreadyOpen) {
+    console.log('[facebook] Comment popup is already open.');
+    return alreadyOpen;
+  }
+
+  const ranked = await rankedCommentButtons(page);
+  if (!ranked.length) throw new Error('Facebook comment button was not found in the feed');
+  console.log(`[facebook] Found ${ranked.length} Leave a comment buttons in the feed.`);
+
+  for (const target of ranked) {
+    console.log(`[facebook] Clicking comment button at y=${target.top} text="${target.countText}"`);
+    await target.button.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(300);
+
+    const icon = target.button.locator('[data-ad-rendering-role="comment_button"]').first();
+    if (await icon.count().catch(() => 0)) {
+      await icon.click({ force: true, timeout: 5000 }).catch(() => {});
+    } else {
+      await target.button.click({ timeout: 5000 }).catch(() => {});
     }
 
-    // Secondary click attempt using native browser DOM dispatch if Playwright click was masked by overlay
-    await page.evaluate(() => {
-      const btn = document.querySelector('div[aria-label="Leave a comment"][role="button"]') ||
-                  document.querySelector('[data-ad-rendering-role="comment_button"]') ||
-                  document.querySelector('div[aria-label*="Leave a comment" i]') ||
-                  document.querySelector('div[role="button"][aria-label*="comment" i]');
-      if (btn) {
-        const target = btn.closest('[role="button"]') || btn;
-        target.scrollIntoView({ behavior: 'instant', block: 'center' });
-        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-        target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
-        target.click();
-      }
-    }).catch(() => {});
+    let editor = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      editor = await openedCommentEditor(page);
+      if (editor) break;
+      await page.waitForTimeout(400);
+    }
+    if (editor) {
+      console.log('[facebook] Comment popup editor is visible.');
+      return editor;
+    }
+    console.log('[facebook] This feed button did not open the comment box.');
+  }
 
-    // Wait for the popup / Lexical comment box to render
+  throw new Error('Facebook comment popup did not open');
+}
+
+async function typeIntoCommentEditor(page, editor, text) {
+  const probe = text.slice(0, 24);
+  await editor.scrollIntoViewIfNeeded().catch(() => {});
+
+  const paragraph = editor.locator('p').first();
+  if (await paragraph.isVisible().catch(() => false)) {
+    await paragraph.click({ timeout: 5000 });
+  } else {
+    await editor.click({ timeout: 5000 });
+  }
+  await page.waitForTimeout(250);
+
+  console.log('[facebook] Inserting comment text...');
+  await page.keyboard.insertText(text);
+  await page.waitForTimeout(500);
+
+  let written = await editorPlainText(editor);
+  if (probe && written.includes(probe)) return written;
+
+  console.log('[facebook] insertText was not accepted. Typing with key events...');
+  await editor.click({ timeout: 5000 });
+  await page.keyboard.press('Control+A').catch(() => {});
+  await page.keyboard.press('Backspace').catch(() => {});
+  await editor.pressSequentially(text, { delay: 12 });
+  await page.waitForTimeout(400);
+  written = await editorPlainText(editor);
+  if (probe && written.includes(probe)) return written;
+
+  console.log('[facebook] Key events were not accepted. Trying Lexical insertText...');
+  await editor.evaluate((node, value) => {
+    node.focus();
+    const target = node.querySelector('p') || node;
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand('insertText', false, value);
+  }, text);
+  await page.waitForTimeout(400);
+  return editorPlainText(editor);
+}
+
+async function submitAnswer(page, comment) {
+  const text = String(comment || '').replace(/\s*\n+\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) throw new Error('Facebook comment is empty');
+
+  console.log('[facebook] Starting comment submission flow...');
+  const editor = await openCommentEditor(page);
+  const written = await typeIntoCommentEditor(page, editor, text);
+  const probe = text.slice(0, 24);
+  if (!written || !written.includes(probe)) {
+    throw new Error('Facebook comment box did not accept the text');
+  }
+  console.log(`[facebook] Editor accepted the comment (${written.length} chars).`);
+
+  const postButton = postCommentButton(page);
+  console.log('[facebook] Waiting for Post comment to enable, then clicking it...');
+  await postButton.waitFor({ state: 'visible', timeout: 8000 });
+  await postButton.click({ timeout: 10000 });
+  await page.waitForTimeout(2000);
+
+  const stillInEditor = await editorPlainText(editor).catch(() => '');
+  if (stillInEditor.includes(probe)) {
+    console.log('[facebook] Text is still in the box. Pressing Enter to post...');
+    await editor.click({ timeout: 3000 }).catch(() => {});
+    await page.keyboard.press('Enter');
     await page.waitForTimeout(2000);
   }
 
-  // 2. Poll for the active Lexical editor box
-  const editorSelectors = [
-    'div[data-lexical-editor="true"][role="textbox"]',
-    'div[aria-label*="Comment as" i][contenteditable="true"]',
-    'div[aria-placeholder*="Comment as" i][contenteditable="true"]',
-    'div[role="textbox"][contenteditable="true"]',
-    'div[aria-label*="Write a comment" i][contenteditable="true"]',
-    'div[aria-label*="Write a public comment" i][contenteditable="true"]',
-    'div[aria-label*="Leave a comment" i][contenteditable="true"]',
-    'div[contenteditable="true"]',
-  ];
-
-  let activeEditor = null;
-  for (let attempt = 0; attempt < 25; attempt++) {
-    for (const sel of editorSelectors) {
-      const loc = page.locator(sel).first();
-      if (await loc.isVisible().catch(() => false)) {
-        activeEditor = loc;
-        console.log(`[facebook] Successfully located comment editor: "${sel}"`);
-        break;
-      }
-    }
-    if (activeEditor) break;
-    await page.waitForTimeout(400);
-  }
-
-  if (!activeEditor) {
-    // Fallback: try finding any textbox
-    activeEditor = page.locator('div[role="textbox"]').first();
-    await activeEditor.waitFor({ state: 'visible', timeout: 10000 });
-  }
-
-  // 3. Focus and activate Lexical editor
-  await activeEditor.scrollIntoViewIfNeeded().catch(() => {});
-  await activeEditor.click({ force: true }).catch(() => {});
-  await page.waitForTimeout(300);
-
-  // If there's an inner <p> or <br> inside Lexical, click it directly to place cursor
-  const innerP = activeEditor.locator('p').first();
-  if (await innerP.isVisible().catch(() => false)) {
-    await innerP.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(200);
-  }
-
-  await activeEditor.focus().catch(() => {});
-  await page.waitForTimeout(300);
-
-  // 4. Insert text into comment box
-  console.log('[facebook] Typing comment into editor...');
-  await page.keyboard.insertText(comment);
-  await page.waitForTimeout(600);
-
-  // Verify text was accepted; if not, use pressSequentially
-  const currentContent = (await activeEditor.innerText().catch(() => '')).trim();
-  if (!currentContent) {
-    console.log('[facebook] insertText not reflected, typing with pressSequentially fallback...');
-    await activeEditor.pressSequentially(comment, { delay: 15 }).catch(() => {});
-  }
-  await page.waitForTimeout(1000);
-
-  // 5. Submit comment
-  // Look for the exact submit button provided in HTML:
-  // <div id="focused-state-composer-submit"><span ...><div aria-label="Post comment" role="button">...</div></span></div>
-  const submitButtonSelectors = [
-    '#focused-state-composer-submit div[role="button"]',
-    'div[aria-label="Post comment"][role="button"]',
-    'div[aria-label="Post comment"]',
-    '#focused-state-composer-submit',
-    'div[aria-label="Comment"][role="button"]',
-    'div[aria-label="Press Enter to post."]',
-    'div[aria-label*="Post" i][role="button"]',
-  ];
-
-  let submitClicked = false;
-  for (const sSel of submitButtonSelectors) {
-    const sBtn = page.locator(sSel).first();
-    if (await sBtn.isVisible().catch(() => false)) {
-      const isDisabled = await sBtn.getAttribute('aria-disabled').catch(() => null);
-      if (isDisabled !== 'true') {
-        console.log(`[facebook] Clicking submit button: "${sSel}"`);
-        await sBtn.click({ force: true }).catch(() => {});
-        submitClicked = true;
-        break;
-      }
-    }
-  }
-
-  // Also press Enter on keyboard as standard Facebook submission
-  console.log('[facebook] Pressing Enter to confirm submission...');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-
-  // JavaScript fallback click on submit button if still open
-  if (!submitClicked) {
-    await page.evaluate(() => {
-      const btn = document.querySelector('#focused-state-composer-submit div[role="button"]') ||
-                  document.querySelector('div[aria-label="Post comment"]') ||
-                  document.querySelector('div[aria-label*="Post comment" i]');
-      if (btn && btn.getAttribute('aria-disabled') !== 'true') {
-        btn.click();
-      }
-    }).catch(() => {});
-  }
-
-  await page.waitForTimeout(4000);
   console.log('[facebook] Comment submission completed.');
 }
 
@@ -398,12 +412,17 @@ async function answerVisible(page, answer) {
   if (!sample) return false;
 
   for (let i = 0; i < 8; i++) {
-    // Check both inside popup dialog (if open) and page body
-    const dialogText = (await page.locator('div[role="dialog"]').innerText().catch(() => '')).replace(/\s+/g, ' ');
-    const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ');
-    if (dialogText.includes(sample) || bodyText.includes(sample)) {
-      return true;
-    }
+    const found = await page.evaluate((snippet) => {
+      let body = document.body?.innerText || '';
+      const editors = Array.from(document.querySelectorAll('[contenteditable="true"]'));
+      for (const editor of editors) {
+        const chunk = editor.innerText || '';
+        if (chunk) body = body.replace(chunk, ' ');
+      }
+      return body.replace(/\s+/g, ' ').includes(snippet);
+    }, sample).catch(() => false);
+
+    if (found) return true;
     await page.waitForTimeout(1000);
   }
   return false;
