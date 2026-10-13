@@ -236,18 +236,12 @@ async function extractPostsFromDom(page) {
       found.push(makeRow(url, text));
     };
 
-    const html = document.documentElement.innerHTML;
+    const html = document.documentElement.innerHTML.replace(/\\\//g, '/');
 
-    const postPathPatterns = [
-      /facebook\.com\/[A-Za-z0-9._-]+\/posts\/(pfbid[A-Za-z0-9_-]+)/gi,
-      /facebook\\.com\\/[A-Za-z0-9._-]+\\\/posts\\/(pfbid[A-Za-z0-9_-]+)/gi,
-    ];
-    for (const pattern of postPathPatterns) {
-      for (const m of html.matchAll(pattern)) {
-        const segment = m[0].replace(/\\/g, '').split('facebook.com/')[1];
-        pushUrl(`https://www.facebook.com/${segment}`);
-        if (found.length >= limit) return found;
-      }
+    for (const m of html.matchAll(/facebook\.com\/[A-Za-z0-9._-]+\/posts\/(pfbid[A-Za-z0-9_-]+)/gi)) {
+      const segment = m[0].split('facebook.com/')[1];
+      pushUrl(`https://www.facebook.com/${segment}`);
+      if (found.length >= limit) return found;
     }
 
     for (const m of html.matchAll(/story_fbid=(pfbid[A-Za-z0-9_-]+|\d{8,})/gi)) {
@@ -289,7 +283,7 @@ async function extractPostsFromDom(page) {
           found.push(makeRow(url, text));
           break;
         }
-        if (found.length && identityKey(found[found.length - 1].url) break;
+        if (found.length && identityKey(found[found.length - 1].url)) break;
         card = card.parentElement;
       }
       if (found.length >= limit) return found;
