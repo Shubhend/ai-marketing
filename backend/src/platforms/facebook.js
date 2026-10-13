@@ -70,6 +70,9 @@ function rank(candidates, picks) {
     if (commentsNum > 0) {
       score += Math.min(commentsNum * 0.05, 1.0);
     }
+    if (score <= 0 && candidate.url && (candidate.title || candidate.snippet)) {
+      score = 1.25;
+    }
     return { ...candidate, score, reason: String(pick.reason || '').slice(0, 180) };
   }).sort((left, right) => right.score - left.score);
 }
@@ -107,9 +110,14 @@ async function openSearch(page, query) {
     waitUntil: 'domcontentloaded',
     timeout: 45000,
   });
-  await page.waitForTimeout(3000);
-  await page.mouse.wheel(0, 500).catch(() => {});
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(3500);
+  await page.locator('div[role="feed"], a[href*="/posts/"], a[href*="permalink.php"]').first()
+    .waitFor({ state: 'attached', timeout: 15000 })
+    .catch(() => {});
+  for (let scroll = 0; scroll < 3; scroll += 1) {
+    await page.mouse.wheel(0, 700).catch(() => {});
+    await page.waitForTimeout(1200);
+  }
 }
 
 const EXTRACT_POST_LIMIT = 15;
@@ -117,9 +125,36 @@ const EXTRACT_SCROLL_ATTEMPTS = 6;
 
 async function extractPostsFromDom(page) {
   return page.evaluate((limit) => {
-    const cleanUrl = (href) => {
+    const canonicalPostUrl = (href) => {
       if (!href) return '';
-      return href.split('?')[0].split('#')[0].split('&__cft__')[0].split('?__cft__')[0];
+      try {
+        const u = new URL(href, 'https://www.facebook.com');
+        if (/hashtag|\/search\//i.test(u.href)) return '';
+
+        const path = u.pathname.replace(/\/+$/, '') || '/';
+        const story = u.searchParams.get('story_fbid') || u.searchParams.get('fbid');
+        const pageId = u.searchParams.get('id');
+
+        if (/permalink\.php|story\.php|photo\.php/i.test(path)) {
+          if (!story) return '';
+          const idPart = pageId ? `&id=${pageId}` : '';
+          return `${u.origin}${path}?story_fbid=${story}${idPart}`;
+        }
+
+        if (/\/groups\/[^/]+\/permalink\/\d+/i.test(path)) {
+          return `${u.origin}${path}`;
+        }
+        if (/\/posts\/pfbid/i.test(path) || /\/posts\/\d+/i.test(path)) {
+          return `${u.origin}${path}`;
+        }
+        if (/\/(videos|photos|reel|watch)\//i.test(path)) {
+          return `${u.origin}${path}`;
+        }
+
+        return `${u.origin}${path}`.split('#')[0];
+      } catch {
+        return href.split('#')[0].split('&__cft__')[0];
+      }
     };
 
     const isPostHref = (href) => {
@@ -129,9 +164,11 @@ async function extractPostsFromDom(page) {
         || /permalink\.php/.test(href)
         || /\/permalink\//.test(href)
         || /story\.php/.test(href)
+        || /photo\.php/.test(href)
         || /\/videos\//.test(href)
         || /\/photos\//.test(href)
         || /\/watch\//.test(href)
+        || /\/reel\//.test(href)
       );
     };
 
@@ -140,10 +177,12 @@ async function extractPostsFromDom(page) {
       let best = '';
       let bestScore = -1;
       for (const a of anchors) {
-        const href = cleanUrl(a.href);
+        const href = canonicalPostUrl(a.href);
+        if (!href) continue;
         let score = 0;
         if (/pfbid/i.test(href)) score += 12;
         if (/\/posts\//.test(href)) score += 8;
+        if (/story_fbid=/i.test(href)) score += 10;
         if (/\/videos\//.test(href) || /\/photos\//.test(href)) score += 6;
         if (href.length > 45) score += 2;
         if (score > bestScore) {
@@ -205,7 +244,41 @@ async function extractPostsFromDom(page) {
       found.push(row);
     };
 
-    // 1) One row per "Leave a comment" (smallest card that contains only that button)
+    const rowFromLink = (link) => {
+      const url = canonicalPostUrl(link.href);
+      if (!url) return null;
+
+      let card = link.parentElement;
+      let text = (link.innerText || '').replace(/\s+/g, ' ').trim();
+      for (let depth = 0; depth < 14 && card && card !== document.body; depth += 1) {
+        const chunk = (card.innerText || '').replace(/\s+/g, ' ').trim();
+        if (chunk.length >= 35 && chunk.length <= 5000) {
+          text = chunk;
+          break;
+        }
+        card = card.parentElement;
+      }
+      if (text.length < 15) return null;
+
+      const commentMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+comments?/i);
+      const likeMatch = text.match(/(\d+(?:\.\d+)?[kKmM]?)\s+(?:likes?|reactions?|others)/i);
+      return {
+        title: text.slice(0, 120),
+        url,
+        snippet: text.slice(0, 240),
+        upvotes: likeMatch ? likeMatch[1] : '0',
+        answers: commentMatch ? commentMatch[1] : '0',
+      };
+    };
+
+    // 1) Search / feed: every unique canonical post link (fixes permalink.php dedupe)
+    for (const link of document.querySelectorAll('a[href]')) {
+      if (!isPostHref(link.href || '')) continue;
+      pushRow(rowFromLink(link));
+      if (found.length >= limit) return found;
+    }
+
+    // 2) One row per "Leave a comment" (smallest card that contains only that button)
     for (const btn of leaveCommentButtons()) {
       const card = minimalCardForButton(btn);
       if (!card) continue;
@@ -213,7 +286,7 @@ async function extractPostsFromDom(page) {
       if (found.length >= limit) return found;
     }
 
-    // 2) Feed children (search / home) — one row per direct feed child with a comment action
+    // 3) Feed children — one row per direct feed child with a comment action
     const feed = document.querySelector('div[role="feed"]');
     if (feed) {
       for (const child of feed.children) {
@@ -222,30 +295,6 @@ async function extractPostsFromDom(page) {
         if (row.url || row.title.length >= 25) pushRow(row);
         if (found.length >= limit) return found;
       }
-    }
-
-    // 3) Every unique post permalink on the page → compact card
-    const linkCards = new Map();
-    for (const link of document.querySelectorAll('a[href]')) {
-      const href = link.href || '';
-      if (!isPostHref(href)) continue;
-      const url = cleanUrl(href);
-      if (linkCards.has(url)) continue;
-
-      let card = link.parentElement;
-      for (let depth = 0; depth < 14 && card && card !== document.body; depth += 1) {
-        const text = (card.innerText || '').replace(/\s+/g, ' ').trim();
-        if (text.length >= 35 && text.length <= 5000) {
-          linkCards.set(url, card);
-          break;
-        }
-        card = card.parentElement;
-      }
-    }
-
-    for (const [, card] of linkCards) {
-      pushRow(cardToRow(card));
-      if (found.length >= limit) return found;
     }
 
     return found;
